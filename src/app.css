@@ -188,6 +188,25 @@ button.share:active {
   font-weight: 700;
   cursor: pointer;
   padding: 0;
+  /* touch: no double-tap zoom, no long-press text selection/callout */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Bigger targets and menu rows on touch screens (Apple guideline: ≥44px) */
+@media (pointer: coarse) {
+  .cell {
+    width: 44px;
+    height: 44px;
+    font-size: 17px;
+  }
+
+  .cell-menu-item {
+    padding: 11px 10px;
+    font-size: 16px;
+  }
 }
 
 .cell.beat-start {

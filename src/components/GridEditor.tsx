@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   GrooveData,
   HIHAT_HIT_TO_CHAR,
@@ -90,6 +90,15 @@ interface MenuState {
   y: number;
 }
 
+function menuKey(lane: Lane): 'H' | 'S' | 'K' | 'T' | 'ST' {
+  if (lane === 'ST') return 'ST';
+  if (lane.startsWith('T')) return 'T';
+  return lane as 'H' | 'S' | 'K';
+}
+
+const LONG_PRESS_MS = 450;
+const LONG_PRESS_DRIFT_PX = 10;
+
 export function GridEditor({
   groove,
   currentCell,
@@ -99,9 +108,33 @@ export function GridEditor({
   onSetCell,
 }: Props) {
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const menuOpenedAt = useRef(0);
+  const longPress = useRef<{
+    timer: ReturnType<typeof setTimeout>;
+    fired: boolean;
+    x: number;
+    y: number;
+  } | null>(null);
   const n = totalCells(groove);
   const perBeat = cellsPerBeat(groove.timeSig, groove.div);
   const perMeasure = cellsPerMeasure(groove.timeSig, groove.div);
+
+  const openMenu = (lane: Lane, index: number, x: number, y: number) => {
+    const itemCount = MENU_ITEMS[menuKey(lane)].length;
+    menuOpenedAt.current = Date.now();
+    setMenu({
+      lane,
+      index,
+      x: Math.min(x, window.innerWidth - 200),
+      y: Math.max(8, Math.min(y, window.innerHeight - itemCount * 38 - 50)),
+    });
+  };
+
+  const closeMenuGuarded = () => {
+    // ignore the synthetic click that can follow a long-press release
+    if (Date.now() - menuOpenedAt.current < 350) return;
+    setMenu(null);
+  };
 
   useEffect(() => {
     if (!menu) return;
@@ -153,11 +186,7 @@ export function GridEditor({
     return classes.join(' ');
   };
 
-  const menuItems: MenuItem[] = menu
-    ? MENU_ITEMS[
-        menu.lane === 'ST' ? 'ST' : menu.lane.startsWith('T') ? 'T' : (menu.lane as 'H' | 'S' | 'K')
-      ]
-    : [];
+  const menuItems: MenuItem[] = menu ? MENU_ITEMS[menuKey(menu.lane)] : [];
 
   return (
     <div className="grid-editor" style={{ ['--cells' as string]: n }}>
@@ -172,14 +201,47 @@ export function GridEditor({
                 onClick={() => onToggle(lane, i)}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  setMenu({
-                    lane,
-                    index: i,
-                    x: Math.min(e.clientX, window.innerWidth - 190),
-                    y: Math.min(e.clientY, window.innerHeight - 40 * menuItems.length - 60),
-                  });
+                  openMenu(lane, i, e.clientX, e.clientY);
                 }}
-                title={`${LANE_LABELS[lane]} — cell ${i + 1} (right-click for all sounds)`}
+                onTouchStart={(e) => {
+                  const t = e.touches[0];
+                  const state = {
+                    timer: 0 as unknown as ReturnType<typeof setTimeout>,
+                    fired: false,
+                    x: t.clientX,
+                    y: t.clientY,
+                  };
+                  state.timer = setTimeout(() => {
+                    state.fired = true;
+                    // offset so the menu isn't under the finger on release
+                    openMenu(lane, i, state.x + 10, state.y - 30);
+                  }, LONG_PRESS_MS);
+                  longPress.current = state;
+                }}
+                onTouchMove={(e) => {
+                  const s = longPress.current;
+                  if (!s) return;
+                  const t = e.touches[0];
+                  if (Math.hypot(t.clientX - s.x, t.clientY - s.y) > LONG_PRESS_DRIFT_PX) {
+                    clearTimeout(s.timer);
+                    longPress.current = null;
+                  }
+                }}
+                onTouchEnd={(e) => {
+                  const s = longPress.current;
+                  if (s) {
+                    clearTimeout(s.timer);
+                    // a completed long-press must not also fire the click-cycle
+                    if (s.fired && e.cancelable) e.preventDefault();
+                  }
+                  longPress.current = null;
+                }}
+                onTouchCancel={() => {
+                  const s = longPress.current;
+                  if (s) clearTimeout(s.timer);
+                  longPress.current = null;
+                }}
+                title={`${LANE_LABELS[lane]} — cell ${i + 1} (right-click or long-press for all sounds)`}
               >
                 {laneChar(lane, i)}
               </button>
@@ -192,7 +254,7 @@ export function GridEditor({
         <>
           <div
             className="menu-backdrop"
-            onClick={() => setMenu(null)}
+            onClick={closeMenuGuarded}
             onContextMenu={(e) => {
               e.preventDefault();
               setMenu(null);

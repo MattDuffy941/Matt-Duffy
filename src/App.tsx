@@ -230,8 +230,9 @@ export default function App() {
           <a href="https://github.com/montulli/GrooveScribe" target="_blank" rel="noreferrer">
             GrooveScribe
           </a>
-          . Click a cell to cycle common sounds; <strong>right-click for the full menu</strong>{' '}
-          (ride, crash, cross-stick, flams and more).
+          . Click a cell to cycle common sounds;{' '}
+          <strong>right-click or long-press for the full menu</strong> (ride, crash, cross-stick,
+          flams and more).
         </p>
       </footer>
     </div>
