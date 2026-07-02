@@ -16,6 +16,7 @@ import {
   Sticking,
 } from './lib/grooveData';
 import { grooveToAbc } from './lib/grooveToAbc';
+import { exportPdf } from './lib/exportPdf';
 import { GroovePlayer } from './lib/audio/player';
 import { Controls } from './components/Controls';
 import { GridEditor, Lane } from './components/GridEditor';
@@ -185,6 +186,11 @@ export default function App() {
     void navigator.clipboard?.writeText(window.location.href);
   }, []);
 
+  const handleExportPdf = useCallback(() => {
+    const container = document.querySelector<HTMLElement>('.notation');
+    if (container) void exportPdf(container, groove.title);
+  }, [groove.title]);
+
   return (
     <div className="app">
       <header>
@@ -207,6 +213,7 @@ export default function App() {
         onRampChange={setRampBpm}
         onToggleToms={() => setShowToms((v) => !v)}
         onToggleSticking={() => setShowSticking((v) => !v)}
+        onExportPdf={handleExportPdf}
       />
       <GridEditor
         groove={groove}

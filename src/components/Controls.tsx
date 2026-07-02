@@ -26,6 +26,7 @@ interface Props {
   onRampChange: (v: number) => void;
   onToggleToms: () => void;
   onToggleSticking: () => void;
+  onExportPdf: () => void;
 }
 
 export function Controls({
@@ -44,6 +45,7 @@ export function Controls({
   onRampChange,
   onToggleToms,
   onToggleSticking,
+  onExportPdf,
 }: Props) {
   return (
     <div className="controls">
@@ -209,8 +211,8 @@ export function Controls({
 
       <button
         className="toms-toggle"
-        onClick={() => window.print()}
-        title="Print the sheet music — choose 'Save as PDF' in the print dialog"
+        onClick={onExportPdf}
+        title="Download the sheet music as a PDF"
       >
         Export PDF
       </button>
