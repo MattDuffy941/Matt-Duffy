@@ -17,6 +17,7 @@ interface Props {
   countIn: boolean;
   rampBpm: number;
   showToms: boolean;
+  showSticking: boolean;
   onChange: (changes: Partial<GrooveData>) => void;
   onPlayStop: () => void;
   onShare: () => void;
@@ -24,6 +25,7 @@ interface Props {
   onCountInChange: (v: boolean) => void;
   onRampChange: (v: number) => void;
   onToggleToms: () => void;
+  onToggleSticking: () => void;
 }
 
 export function Controls({
@@ -33,6 +35,7 @@ export function Controls({
   countIn,
   rampBpm,
   showToms,
+  showSticking,
   onChange,
   onPlayStop,
   onShare,
@@ -40,6 +43,7 @@ export function Controls({
   onCountInChange,
   onRampChange,
   onToggleToms,
+  onToggleSticking,
 }: Props) {
   return (
     <div className="controls">
@@ -197,6 +201,10 @@ export function Controls({
 
       <button className="toms-toggle" onClick={onToggleToms}>
         {showToms ? 'Hide toms' : 'Show toms'}
+      </button>
+
+      <button className="toms-toggle" onClick={onToggleSticking}>
+        {showSticking ? 'Hide sticking' : 'Sticking'}
       </button>
 
       <button

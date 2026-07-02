@@ -200,6 +200,24 @@ describe('toUrl — serialization', () => {
     expect(g2.toms[0][4]).toBe('normal');
   });
 
+  it('round-trips stickings, omitting the param when empty', () => {
+    const g = createEmptyGroove();
+    expect(toUrl(g)).not.toContain('Stickings=');
+    const url =
+      '?TimeSig=4/4&Div=16&Tempo=80&Measures=1&H=|----------------|&S=|----------------|&K=|----------------|&Stickings=|R-L-R-L-B-------|';
+    const g2 = parseUrl(url);
+    expect(g2.stickings[0]).toBe('R');
+    expect(g2.stickings[2]).toBe('L');
+    expect(g2.stickings[8]).toBe('B');
+    expect(toUrl(g2)).toBe(url);
+  });
+
+  it('accepts lowercase sticking characters', () => {
+    const g = parseUrl('?TimeSig=4/4&Div=16&Tempo=80&Measures=1&Stickings=|rl--------------|');
+    expect(g.stickings[0]).toBe('R');
+    expect(g.stickings[1]).toBe('L');
+  });
+
   it('round-trips every hit type in every lane', () => {
     const url =
       '?TimeSig=4/4&Div=16&Tempo=80&Measures=1&H=|xXo+rbcsmnN-----|&S=|oOgxfdb---------|&K=|oxX-------------|';

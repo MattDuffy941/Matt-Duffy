@@ -34,6 +34,8 @@ import {
   MAX_MEASURES,
   SNARE_CHAR_TO_HIT,
   SNARE_HIT_TO_CHAR,
+  STICKING_CHAR_TO_HIT,
+  STICKING_HIT_TO_CHAR,
   TimeSig,
   TOM_CHAR_TO_HIT,
   TOM_HIT_TO_CHAR,
@@ -173,6 +175,7 @@ export function parseUrl(search: string): GrooveData {
     parseTabString(decodeLane(params.get('t3')), n, TOM_CHAR_TO_HIT),
     parseTabString(decodeLane(params.get('t4')), n, TOM_CHAR_TO_HIT),
   ];
+  groove.stickings = parseTabString(decodeLane(params.get('stickings')), n, STICKING_CHAR_TO_HIT);
 
   return groove;
 }
@@ -198,6 +201,9 @@ export function toUrl(g: GrooveData): string {
       parts.push(`T${i + 1}=${laneToTabString(lane, perMeasure, TOM_HIT_TO_CHAR)}`);
     }
   });
+  if (laneHasHits(g.stickings)) {
+    parts.push(`Stickings=${laneToTabString(g.stickings, perMeasure, STICKING_HIT_TO_CHAR)}`);
+  }
 
   return '?' + parts.join('&');
 }

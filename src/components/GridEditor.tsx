@@ -4,23 +4,26 @@ import {
   HIHAT_HIT_TO_CHAR,
   KICK_HIT_TO_CHAR,
   SNARE_HIT_TO_CHAR,
+  STICKING_HIT_TO_CHAR,
   cellsPerBeat,
   cellsPerMeasure,
   totalCells,
 } from '../lib/grooveData';
 
-export type Lane = 'H' | 'S' | 'K' | 'T1' | 'T2' | 'T3' | 'T4';
+export type Lane = 'H' | 'S' | 'K' | 'T1' | 'T2' | 'T3' | 'T4' | 'ST';
 
 interface Props {
   groove: GrooveData;
   currentCell: number;
   showToms: boolean;
+  showSticking: boolean;
   onToggle: (lane: Lane, index: number) => void;
   /** Set a cell to an explicit tab character (null = clear). */
   onSetCell: (lane: Lane, index: number, char: string | null) => void;
 }
 
 const LANE_LABELS: Record<Lane, string> = {
+  ST: 'Sticking',
   H: 'Hi-hat',
   T1: 'Hi tom',
   T2: 'Mid tom',
@@ -30,8 +33,8 @@ const LANE_LABELS: Record<Lane, string> = {
   K: 'Kick',
 };
 
-/** Top-to-bottom like a kit: cymbals, rack toms, snare, floor tom, kick. */
-const LANE_ORDER: Lane[] = ['H', 'T1', 'T2', 'S', 'T4', 'K'];
+/** Top-to-bottom like a kit: sticking, cymbals, rack toms, snare, floor tom, kick. */
+const LANE_ORDER: Lane[] = ['ST', 'H', 'T1', 'T2', 'S', 'T4', 'K'];
 
 interface MenuItem {
   char: string | null;
@@ -39,7 +42,13 @@ interface MenuItem {
 }
 
 /** Right-click palette per lane (tab chars are the canonical vocabulary). */
-const MENU_ITEMS: Record<'H' | 'S' | 'K' | 'T', MenuItem[]> = {
+const MENU_ITEMS: Record<'H' | 'S' | 'K' | 'T' | 'ST', MenuItem[]> = {
+  ST: [
+    { char: null, label: 'Off' },
+    { char: 'R', label: 'Right hand' },
+    { char: 'L', label: 'Left hand' },
+    { char: 'B', label: 'Both hands' },
+  ],
   H: [
     { char: null, label: 'Off' },
     { char: 'x', label: 'Hi-hat' },
@@ -81,7 +90,14 @@ interface MenuState {
   y: number;
 }
 
-export function GridEditor({ groove, currentCell, showToms, onToggle, onSetCell }: Props) {
+export function GridEditor({
+  groove,
+  currentCell,
+  showToms,
+  showSticking,
+  onToggle,
+  onSetCell,
+}: Props) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const n = totalCells(groove);
   const perBeat = cellsPerBeat(groove.timeSig, groove.div);
@@ -101,9 +117,17 @@ export function GridEditor({ groove, currentCell, showToms, onToggle, onSetCell 
     };
   }, [menu]);
 
-  const lanes = LANE_ORDER.filter((l) => showToms || !l.startsWith('T'));
+  const lanes = LANE_ORDER.filter((l) => {
+    if (l === 'ST') return showSticking;
+    if (l.startsWith('T')) return showToms;
+    return true;
+  });
 
   const laneChar = (lane: Lane, i: number): string => {
+    if (lane === 'ST') {
+      const s = groove.stickings[i];
+      return s ? STICKING_HIT_TO_CHAR[s] : '';
+    }
     if (lane === 'H') {
       const h = groove.hihat[i];
       return h ? HIHAT_HIT_TO_CHAR[h] : '';
@@ -130,7 +154,9 @@ export function GridEditor({ groove, currentCell, showToms, onToggle, onSetCell 
   };
 
   const menuItems: MenuItem[] = menu
-    ? MENU_ITEMS[menu.lane.startsWith('T') ? 'T' : (menu.lane as 'H' | 'S' | 'K')]
+    ? MENU_ITEMS[
+        menu.lane === 'ST' ? 'ST' : menu.lane.startsWith('T') ? 'T' : (menu.lane as 'H' | 'S' | 'K')
+      ]
     : [];
 
   return (

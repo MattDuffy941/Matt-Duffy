@@ -96,6 +96,27 @@ describe('grooveToAbc — body', () => {
     expect(abc).toContain('%%percmap A low-floor-tom');
   });
 
+  it('renders stickings as annotations on an invisible-rest voice', () => {
+    const abc = grooveToAbc(
+      parseUrl(
+        '?TimeSig=4/4&Div=16&Tempo=80&Measures=1&H=|x-x-x-x-x-x-x-x-|&Stickings=|R-L-------------|',
+      ),
+    );
+    expect(abc).toContain('%%score (3 1 2)');
+    const sticks = abc.split('\n').find((l) => l.startsWith('[V:3]'))!;
+    expect(sticks).toContain('"^R"x');
+    expect(sticks).toContain('"^L"x');
+    // gaps are invisible rests, not visible ones
+    expect(sticks).toContain('x4');
+    expect(sticks).not.toMatch(/z/);
+  });
+
+  it('omits the stickings voice when the lane is empty', () => {
+    const abc = grooveToAbc(parseUrl('?TimeSig=4/4&Div=16&Tempo=80&Measures=1'));
+    expect(abc).toContain('%%score (1 2)');
+    expect(abc).not.toContain('[V:3]');
+  });
+
   it('renders flams as grace notes and cross-stick on its own position', () => {
     const abc = grooveToAbc(
       parseUrl('?TimeSig=4/4&Div=16&Tempo=80&Measures=1&S=|f---x-----------|'),

@@ -12,6 +12,8 @@ import {
   HIHAT_CHAR_TO_HIT,
   KICK_CHAR_TO_HIT,
   SNARE_CHAR_TO_HIT,
+  STICKING_CHAR_TO_HIT,
+  Sticking,
 } from './lib/grooveData';
 import { grooveToAbc } from './lib/grooveToAbc';
 import { GroovePlayer } from './lib/audio/player';
@@ -26,6 +28,7 @@ const DEFAULT_GROOVE_URL =
 const H_CYCLE: (HihatHit | null)[] = [null, 'normal', 'accent', 'open'];
 const S_CYCLE: (SnareHit | null)[] = [null, 'normal', 'accent', 'ghost'];
 const K_CYCLE: (KickHit | null)[] = [null, 'normal', 'splash', 'kickAndSplash'];
+const ST_CYCLE: (Sticking | null)[] = [null, 'R', 'L', 'B'];
 
 function cloneGroove(g: GrooveData): GrooveData {
   return {
@@ -34,6 +37,7 @@ function cloneGroove(g: GrooveData): GrooveData {
     snare: [...g.snare],
     kick: [...g.kick],
     toms: [[...g.toms[0]], [...g.toms[1]], [...g.toms[2]], [...g.toms[3]]],
+    stickings: [...g.stickings],
   };
 }
 
@@ -53,6 +57,7 @@ export default function App() {
   const [countIn, setCountIn] = useState(false);
   const [rampBpm, setRampBpm] = useState(0);
   const [showToms, setShowToms] = useState(() => groove.toms.some((l) => laneHasHits(l)));
+  const [showSticking, setShowSticking] = useState(() => laneHasHits(groove.stickings));
   const playerRef = useRef<GroovePlayer | null>(null);
 
   const getPlayer = useCallback((): GroovePlayer => {
@@ -82,7 +87,9 @@ export default function App() {
     (lane: Lane, index: number) => {
       setGroove((prev) => {
         const next = cloneGroove(prev);
-        if (lane === 'H') {
+        if (lane === 'ST') {
+          next.stickings[index] = cycleNext(ST_CYCLE, prev.stickings[index]);
+        } else if (lane === 'H') {
           next.hihat[index] = cycleNext(H_CYCLE, prev.hihat[index]);
           if (next.hihat[index]) getPlayer().preview({ hihat: next.hihat[index]! });
         } else if (lane === 'S') {
@@ -106,7 +113,9 @@ export default function App() {
     (lane: Lane, index: number, char: string | null) => {
       setGroove((prev) => {
         const next = cloneGroove(prev);
-        if (lane === 'H') {
+        if (lane === 'ST') {
+          next.stickings[index] = char ? STICKING_CHAR_TO_HIT[char] ?? null : null;
+        } else if (lane === 'H') {
           next.hihat[index] = char ? HIHAT_CHAR_TO_HIT[char] ?? null : null;
           if (next.hihat[index]) getPlayer().preview({ hihat: next.hihat[index]! });
         } else if (lane === 'S') {
@@ -140,6 +149,7 @@ export default function App() {
           remapLane(prev.toms[2], n),
           remapLane(prev.toms[3], n),
         ];
+        next.stickings = remapLane(prev.stickings, n);
       }
       return next;
     });
@@ -149,6 +159,7 @@ export default function App() {
     const g = parseUrl(query);
     setGroove(g);
     setShowToms((prev) => prev || g.toms.some((l) => laneHasHits(l)));
+    setShowSticking((prev) => prev || laneHasHits(g.stickings));
   }, []);
 
   const handlePlayStop = useCallback(() => {
@@ -182,6 +193,7 @@ export default function App() {
         countIn={countIn}
         rampBpm={rampBpm}
         showToms={showToms}
+        showSticking={showSticking}
         onChange={handleChange}
         onPlayStop={handlePlayStop}
         onShare={handleShare}
@@ -189,11 +201,13 @@ export default function App() {
         onCountInChange={setCountIn}
         onRampChange={setRampBpm}
         onToggleToms={() => setShowToms((v) => !v)}
+        onToggleSticking={() => setShowSticking((v) => !v)}
       />
       <GridEditor
         groove={groove}
         currentCell={currentCell}
         showToms={showToms}
+        showSticking={showSticking}
         onToggle={handleToggle}
         onSetCell={handleSetCell}
       />

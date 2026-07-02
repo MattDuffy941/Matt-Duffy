@@ -37,6 +37,9 @@ export type KickHit = 'normal' | 'splash' | 'kickAndSplash';
 
 export type TomHit = 'normal';
 
+/** Sticking marks written above the notes: right, left, both. */
+export type Sticking = 'R' | 'L' | 'B';
+
 export type Cell<H> = H | null;
 
 export interface GrooveData {
@@ -57,6 +60,8 @@ export interface GrooveData {
   kick: Cell<KickHit>[];
   /** Four tom lanes (T1–T4), each same length as the other lanes. */
   toms: [Cell<TomHit>[], Cell<TomHit>[], Cell<TomHit>[], Cell<TomHit>[]];
+  /** Sticking letters shown above the staff (R/L/B). */
+  stickings: Cell<Sticking>[];
 }
 
 export const ALLOWED_DIVS = [8, 12, 16, 24, 32, 48] as const;
@@ -104,6 +109,7 @@ export function createEmptyGroove(overrides: Partial<GrooveData> = {}): GrooveDa
     snare: [],
     kick: [],
     toms: [[], [], [], []],
+    stickings: [],
   };
   const merged = { ...base, ...overrides };
   const n = totalCells(merged);
@@ -111,6 +117,7 @@ export function createEmptyGroove(overrides: Partial<GrooveData> = {}): GrooveDa
   merged.snare = overrides.snare ?? emptyLane(n);
   merged.kick = overrides.kick ?? emptyLane(n);
   merged.toms = overrides.toms ?? [emptyLane(n), emptyLane(n), emptyLane(n), emptyLane(n)];
+  merged.stickings = overrides.stickings ?? emptyLane(n);
   return merged;
 }
 
@@ -204,4 +211,19 @@ export const TOM_CHAR_TO_HIT: Record<string, TomHit> = {
 
 export const TOM_HIT_TO_CHAR: Record<TomHit, string> = {
   normal: 'o',
+};
+
+export const STICKING_CHAR_TO_HIT: Record<string, Sticking> = {
+  R: 'R',
+  r: 'R',
+  L: 'L',
+  l: 'L',
+  B: 'B',
+  b: 'B',
+};
+
+export const STICKING_HIT_TO_CHAR: Record<Sticking, string> = {
+  R: 'R',
+  L: 'L',
+  B: 'B',
 };

@@ -21,6 +21,7 @@ import {
   HihatHit,
   KickHit,
   SnareHit,
+  STICKING_HIT_TO_CHAR,
   cellsPerBeat,
   cellsPerMeasure,
   isTripletDiv,
@@ -159,6 +160,15 @@ function feetCell(g: GrooveData, i: number): CellNote | null {
   return k ? kickCellNote(k) : null;
 }
 
+/**
+ * Stickings voice: invisible rests (`x`) carrying R/L/B text above the staff.
+ * The letter is an ABC annotation (`"^R"`) attached to the invisible rest.
+ */
+function stickingsCell(g: GrooveData, i: number): CellNote | null {
+  const s = g.stickings[i];
+  return s ? { graces: '', decos: [`"^${STICKING_HIT_TO_CHAR[s]}"`], pitches: ['x'] } : null;
+}
+
 function formatNote(note: CellNote, dur: number): string {
   const durStr = dur > 1 ? String(dur) : '';
   const pitchPart =
@@ -170,7 +180,7 @@ function formatNote(note: CellNote, dur: number): string {
  * Emit one beam group with look-ahead durations. Returns ABC with no spaces
  * inside (so abcjs beams the group together).
  */
-function emitGroup(cells: (CellNote | null)[], triplet: boolean): string {
+function emitGroup(cells: (CellNote | null)[], triplet: boolean, restChar = 'z'): string {
   interface Element {
     text: string;
     span: number;
@@ -186,7 +196,7 @@ function emitGroup(cells: (CellNote | null)[], triplet: boolean): string {
     if (cell !== null) {
       elements.push({ text: formatNote(cell, span), span, isNote: true });
     } else {
-      elements.push({ text: 'z' + (span > 1 ? span : ''), span, isNote: false });
+      elements.push({ text: restChar + (span > 1 ? span : ''), span, isNote: false });
     }
     i = j;
   }
@@ -201,7 +211,7 @@ function emitGroup(cells: (CellNote | null)[], triplet: boolean): string {
   if (elements.length === 1) {
     const e = elements[0];
     const cell = cells[0];
-    return e.isNote && cell !== null ? formatNote(cell, 2) : 'z2';
+    return e.isNote && cell !== null ? formatNote(cell, 2) : restChar + '2';
   }
   const prefix = elements.length === 3 ? '(3' : `(3:2:${elements.length}`;
   return prefix + elements.map((e) => e.text).join('');
@@ -211,6 +221,7 @@ function emitVoiceMeasure(
   g: GrooveData,
   cellForVoice: (g: GrooveData, i: number) => CellNote | null,
   measureIndex: number,
+  restChar = 'z',
 ): string {
   const perMeasure = cellsPerMeasure(g.timeSig, g.div);
   const triplet = isTripletDiv(g.div);
@@ -222,7 +233,7 @@ function emitVoiceMeasure(
     for (let k = 0; k < groupSize && gStart + k < perMeasure; k++) {
       cells.push(cellForVoice(g, start + gStart + k));
     }
-    groups.push(emitGroup(cells, triplet));
+    groups.push(emitGroup(cells, triplet, restChar));
   }
   return groups.join(' ');
 }
@@ -234,6 +245,8 @@ export function grooveToAbc(g: GrooveData): string {
   // Straight: one cell = 1/div note. Triplet: written unit = 3/(2·div).
   const unitDenom = triplet ? Math.round((2 * g.div) / 3) : g.div;
 
+  const hasStickings = g.stickings.some((c) => c !== null);
+
   const lines: string[] = [
     'X:1',
     ...(g.title ? [`T:${g.title}`] : []),
@@ -241,23 +254,27 @@ export function grooveToAbc(g: GrooveData): string {
     `Q:1/4=${g.tempo}`,
     `M:${g.timeSig.top}/${g.timeSig.bottom}`,
     `L:1/${unitDenom}`,
-    '%%score (1 2)',
+    hasStickings ? '%%score (3 1 2)' : '%%score (1 2)',
     ...PERCMAP_LINES,
     'K:C clef=perc',
     'V:1 stem=up',
     'V:2 stem=down',
+    ...(hasStickings ? ['V:3 stem=up'] : []),
   ];
 
   for (let m0 = 0; m0 < g.measures; m0 += MEASURES_PER_LINE) {
     const mEnd = Math.min(g.measures, m0 + MEASURES_PER_LINE);
     const hands: string[] = [];
     const feet: string[] = [];
+    const sticks: string[] = [];
     for (let m = m0; m < mEnd; m++) {
       hands.push(emitVoiceMeasure(g, handsCell, m));
       feet.push(emitVoiceMeasure(g, feetCell, m));
+      if (hasStickings) sticks.push(emitVoiceMeasure(g, stickingsCell, m, 'x'));
     }
     const isLast = mEnd === g.measures;
     const barEnd = isLast ? ' |]' : ' |';
+    if (hasStickings) lines.push('[V:3] ' + sticks.join(' | ') + barEnd);
     lines.push('[V:1] ' + hands.join(' | ') + barEnd);
     lines.push('[V:2] ' + feet.join(' | ') + barEnd);
   }
