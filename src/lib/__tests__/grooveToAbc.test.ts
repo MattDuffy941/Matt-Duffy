@@ -73,6 +73,21 @@ describe('grooveToAbc — body', () => {
     expect(hands).toContain('(3:2:2g2g');
   });
 
+  it('voices the tom ladder at e/d/A/G with the mid tom on the D line', () => {
+    const abc = grooveToAbc(
+      parseUrl(
+        '?TimeSig=4/4&Div=16&Tempo=80&Measures=1&T1=|o---------------|&T2=|----o-----------|&T3=|--------o-------|&T4=|------------o---|',
+      ),
+    );
+    const hands = abc.split('\n').find((l) => l.startsWith('[V:1]'))!;
+    // one tom per beat: e4 d4 A4 G4 — hi (space), mid (ON the D line), low, floor
+    expect(hands).toContain('e4');
+    expect(hands).toContain('d4');
+    expect(hands).toContain('A4');
+    expect(hands).toContain('G4');
+    expect(abc).toContain('%%percmap d hi-mid-tom');
+  });
+
   it('renders flams as grace notes and cross-stick on its own position', () => {
     const abc = grooveToAbc(
       parseUrl('?TimeSig=4/4&Div=16&Tempo=80&Measures=1&S=|f---x-----------|'),

@@ -19,11 +19,11 @@ interface Props {
 
 const LANE_LABELS: Record<Lane, string> = {
   H: 'Hi-hat',
-  T1: 'Tom 1',
-  T2: 'Tom 2',
+  T1: 'Hi tom',
+  T2: 'Mid tom',
   S: 'Snare',
-  T3: 'Tom 3',
-  T4: 'Tom 4',
+  T3: 'Low tom',
+  T4: 'Floor tom',
   K: 'Kick',
 };
 

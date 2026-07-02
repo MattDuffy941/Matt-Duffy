@@ -37,6 +37,8 @@ const PITCH = {
   metronome: "e'",
   snare: 'c', // third space
   xstick: 'B', // middle line, x head
+  // Tom ladder: hi = top space, mid = ON the second line down (half above,
+  // half below the D line), low = second space up, floor = G line.
   toms: ['e', 'd', 'A', 'G'],
   kick: 'F', // first space
   splash: 'D', // below the staff, x head (hi-hat with foot)
