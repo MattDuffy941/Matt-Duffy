@@ -8,6 +8,11 @@ import {
   totalCells,
 } from './lib/grooveData';
 import { parseUrl, toUrl, laneHasHits } from './lib/urlCodec';
+import {
+  HIHAT_CHAR_TO_HIT,
+  KICK_CHAR_TO_HIT,
+  SNARE_CHAR_TO_HIT,
+} from './lib/grooveData';
 import { grooveToAbc } from './lib/grooveToAbc';
 import { GroovePlayer } from './lib/audio/player';
 import { Controls } from './components/Controls';
@@ -97,6 +102,30 @@ export default function App() {
     [getPlayer],
   );
 
+  const handleSetCell = useCallback(
+    (lane: Lane, index: number, char: string | null) => {
+      setGroove((prev) => {
+        const next = cloneGroove(prev);
+        if (lane === 'H') {
+          next.hihat[index] = char ? HIHAT_CHAR_TO_HIT[char] ?? null : null;
+          if (next.hihat[index]) getPlayer().preview({ hihat: next.hihat[index]! });
+        } else if (lane === 'S') {
+          next.snare[index] = char ? SNARE_CHAR_TO_HIT[char] ?? null : null;
+          if (next.snare[index]) getPlayer().preview({ snare: next.snare[index]! });
+        } else if (lane === 'K') {
+          next.kick[index] = char ? KICK_CHAR_TO_HIT[char] ?? null : null;
+          if (next.kick[index]) getPlayer().preview({ kick: next.kick[index]! });
+        } else {
+          const t = (Number(lane[1]) - 1) as 0 | 1 | 2 | 3;
+          next.toms[t][index] = char ? 'normal' : null;
+          if (next.toms[t][index]) getPlayer().preview({ tom: (t + 1) as 1 | 2 | 3 | 4 });
+        }
+        return next;
+      });
+    },
+    [getPlayer],
+  );
+
   const handleChange = useCallback((changes: Partial<GrooveData>) => {
     setGroove((prev) => {
       const next = { ...cloneGroove(prev), ...changes };
@@ -166,6 +195,7 @@ export default function App() {
         currentCell={currentCell}
         showToms={showToms}
         onToggle={handleToggle}
+        onSetCell={handleSetCell}
       />
       <Notation abc={abc} />
       <footer>
@@ -174,8 +204,8 @@ export default function App() {
           <a href="https://github.com/montulli/GrooveScribe" target="_blank" rel="noreferrer">
             GrooveScribe
           </a>
-          . Legend — hi-hat: x normal · X accent · o open; snare: o normal · O accent · g ghost;
-          kick: o kick · x hi-hat foot · X both.
+          . Click a cell to cycle common sounds; <strong>right-click for the full menu</strong>{' '}
+          (ride, crash, cross-stick, flams and more).
         </p>
       </footer>
     </div>

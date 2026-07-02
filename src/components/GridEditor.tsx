@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   GrooveData,
   HIHAT_HIT_TO_CHAR,
@@ -15,6 +16,8 @@ interface Props {
   currentCell: number;
   showToms: boolean;
   onToggle: (lane: Lane, index: number) => void;
+  /** Set a cell to an explicit tab character (null = clear). */
+  onSetCell: (lane: Lane, index: number, char: string | null) => void;
 }
 
 const LANE_LABELS: Record<Lane, string> = {
@@ -30,10 +33,73 @@ const LANE_LABELS: Record<Lane, string> = {
 /** Top-to-bottom like a kit: cymbals, rack toms, snare, floor tom, kick. */
 const LANE_ORDER: Lane[] = ['H', 'T1', 'T2', 'S', 'T4', 'K'];
 
-export function GridEditor({ groove, currentCell, showToms, onToggle }: Props) {
+interface MenuItem {
+  char: string | null;
+  label: string;
+}
+
+/** Right-click palette per lane (tab chars are the canonical vocabulary). */
+const MENU_ITEMS: Record<'H' | 'S' | 'K' | 'T', MenuItem[]> = {
+  H: [
+    { char: null, label: 'Off' },
+    { char: 'x', label: 'Hi-hat' },
+    { char: 'X', label: 'Hi-hat accent' },
+    { char: 'o', label: 'Open hi-hat' },
+    { char: '+', label: 'Foot close' },
+    { char: 'r', label: 'Ride' },
+    { char: 'b', label: 'Ride bell' },
+    { char: 'c', label: 'Crash' },
+    { char: 's', label: 'Stacker' },
+    { char: 'm', label: 'Cowbell' },
+  ],
+  S: [
+    { char: null, label: 'Off' },
+    { char: 'o', label: 'Snare' },
+    { char: 'O', label: 'Accent' },
+    { char: 'g', label: 'Ghost note' },
+    { char: 'x', label: 'Cross-stick' },
+    { char: 'f', label: 'Flam' },
+    { char: 'd', label: 'Drag' },
+    { char: 'b', label: 'Buzz' },
+  ],
+  K: [
+    { char: null, label: 'Off' },
+    { char: 'o', label: 'Kick' },
+    { char: 'x', label: 'Hi-hat foot splash' },
+    { char: 'X', label: 'Kick + splash' },
+  ],
+  T: [
+    { char: null, label: 'Off' },
+    { char: 'o', label: 'Tom hit' },
+  ],
+};
+
+interface MenuState {
+  lane: Lane;
+  index: number;
+  x: number;
+  y: number;
+}
+
+export function GridEditor({ groove, currentCell, showToms, onToggle, onSetCell }: Props) {
+  const [menu, setMenu] = useState<MenuState | null>(null);
   const n = totalCells(groove);
   const perBeat = cellsPerBeat(groove.timeSig, groove.div);
   const perMeasure = cellsPerMeasure(groove.timeSig, groove.div);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
 
   const lanes = LANE_ORDER.filter((l) => showToms || !l.startsWith('T'));
 
@@ -63,6 +129,10 @@ export function GridEditor({ groove, currentCell, showToms, onToggle }: Props) {
     return classes.join(' ');
   };
 
+  const menuItems: MenuItem[] = menu
+    ? MENU_ITEMS[menu.lane.startsWith('T') ? 'T' : (menu.lane as 'H' | 'S' | 'K')]
+    : [];
+
   return (
     <div className="grid-editor" style={{ ['--cells' as string]: n }}>
       {lanes.map((lane) => (
@@ -74,7 +144,16 @@ export function GridEditor({ groove, currentCell, showToms, onToggle }: Props) {
                 key={i}
                 className={cellClass(lane, i)}
                 onClick={() => onToggle(lane, i)}
-                title={`${LANE_LABELS[lane]} — cell ${i + 1}`}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenu({
+                    lane,
+                    index: i,
+                    x: Math.min(e.clientX, window.innerWidth - 190),
+                    y: Math.min(e.clientY, window.innerHeight - 40 * menuItems.length - 60),
+                  });
+                }}
+                title={`${LANE_LABELS[lane]} — cell ${i + 1} (right-click for all sounds)`}
               >
                 {laneChar(lane, i)}
               </button>
@@ -82,6 +161,41 @@ export function GridEditor({ groove, currentCell, showToms, onToggle }: Props) {
           </div>
         </div>
       ))}
+
+      {menu && (
+        <>
+          <div
+            className="menu-backdrop"
+            onClick={() => setMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <div className="cell-menu" style={{ left: menu.x, top: menu.y }}>
+            <div className="cell-menu-title">
+              {LANE_LABELS[menu.lane]} — cell {menu.index + 1}
+            </div>
+            {menuItems.map((item) => (
+              <button
+                key={item.label}
+                className={
+                  (laneChar(menu.lane, menu.index) || null) === item.char
+                    ? 'cell-menu-item active'
+                    : 'cell-menu-item'
+                }
+                onClick={() => {
+                  onSetCell(menu.lane, menu.index, item.char);
+                  setMenu(null);
+                }}
+              >
+                <span className="cell-menu-char">{item.char ?? '–'}</span>
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

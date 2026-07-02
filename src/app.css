@@ -203,6 +203,65 @@ button.share:active {
   filter: brightness(1.25);
 }
 
+/* Right-click cell menu */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.cell-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 176px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.cell-menu-title {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.cell-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cell-menu-item:hover {
+  background: #31415f;
+}
+
+.cell-menu-item.active {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.cell-menu-char {
+  display: inline-block;
+  width: 18px;
+  text-align: center;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-weight: 700;
+  color: var(--muted);
+}
+
 /* Notation */
 .notation {
   background: #f6f4ee;
