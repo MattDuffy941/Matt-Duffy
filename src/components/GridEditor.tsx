@@ -22,13 +22,13 @@ const LANE_LABELS: Record<Lane, string> = {
   T1: 'Hi tom',
   T2: 'Mid tom',
   S: 'Snare',
-  T3: 'Low tom',
+  T3: 'Low tom', // no grid row; still parsed from URLs
   T4: 'Floor tom',
   K: 'Kick',
 };
 
-/** Top-to-bottom like a kit: cymbals, high toms, snare, low toms, kick. */
-const LANE_ORDER: Lane[] = ['H', 'T1', 'T2', 'S', 'T3', 'T4', 'K'];
+/** Top-to-bottom like a kit: cymbals, rack toms, snare, floor tom, kick. */
+const LANE_ORDER: Lane[] = ['H', 'T1', 'T2', 'S', 'T4', 'K'];
 
 export function GridEditor({ groove, currentCell, showToms, onToggle }: Props) {
   const n = totalCells(groove);
