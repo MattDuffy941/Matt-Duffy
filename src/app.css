@@ -103,6 +103,21 @@ button.play.stop {
   color: #2b100e;
 }
 
+.live-bpm {
+  color: var(--playhead);
+  font-weight: 700;
+  min-width: 52px;
+}
+
+button.toms-toggle {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
 button.share {
   margin-left: auto;
   background: var(--panel-2);

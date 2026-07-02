@@ -8,20 +8,34 @@ import {
   totalCells,
 } from '../lib/grooveData';
 
-export type Lane = 'H' | 'S' | 'K';
+export type Lane = 'H' | 'S' | 'K' | 'T1' | 'T2' | 'T3' | 'T4';
 
 interface Props {
   groove: GrooveData;
   currentCell: number;
+  showToms: boolean;
   onToggle: (lane: Lane, index: number) => void;
 }
 
-const LANE_LABELS: Record<Lane, string> = { H: 'Hi-hat', S: 'Snare', K: 'Kick' };
+const LANE_LABELS: Record<Lane, string> = {
+  H: 'Hi-hat',
+  T1: 'Tom 1',
+  T2: 'Tom 2',
+  S: 'Snare',
+  T3: 'Tom 3',
+  T4: 'Tom 4',
+  K: 'Kick',
+};
 
-export function GridEditor({ groove, currentCell, onToggle }: Props) {
+/** Top-to-bottom like a kit: cymbals, high toms, snare, low toms, kick. */
+const LANE_ORDER: Lane[] = ['H', 'T1', 'T2', 'S', 'T3', 'T4', 'K'];
+
+export function GridEditor({ groove, currentCell, showToms, onToggle }: Props) {
   const n = totalCells(groove);
   const perBeat = cellsPerBeat(groove.timeSig, groove.div);
   const perMeasure = cellsPerMeasure(groove.timeSig, groove.div);
+
+  const lanes = LANE_ORDER.filter((l) => showToms || !l.startsWith('T'));
 
   const laneChar = (lane: Lane, i: number): string => {
     if (lane === 'H') {
@@ -32,8 +46,12 @@ export function GridEditor({ groove, currentCell, onToggle }: Props) {
       const s = groove.snare[i];
       return s ? SNARE_HIT_TO_CHAR[s] : '';
     }
-    const k = groove.kick[i];
-    return k ? KICK_HIT_TO_CHAR[k] : '';
+    if (lane === 'K') {
+      const k = groove.kick[i];
+      return k ? KICK_HIT_TO_CHAR[k] : '';
+    }
+    const t = groove.toms[Number(lane[1]) - 1][i];
+    return t ? 'o' : '';
   };
 
   const cellClass = (lane: Lane, i: number): string => {
@@ -47,7 +65,7 @@ export function GridEditor({ groove, currentCell, onToggle }: Props) {
 
   return (
     <div className="grid-editor" style={{ ['--cells' as string]: n }}>
-      {(['H', 'S', 'K'] as Lane[]).map((lane) => (
+      {lanes.map((lane) => (
         <div className="lane" key={lane}>
           <div className="lane-label">{LANE_LABELS[lane]}</div>
           <div className="lane-cells">

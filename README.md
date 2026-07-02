@@ -1,6 +1,6 @@
-# GrooveScribe Clone
+# Groove Builder
 
-A clean-room recreation of the base functionality of
+**Groove Builder** is a clean-room recreation of the base functionality of
 [GrooveScribe](https://github.com/montulli/GrooveScribe) — a browser-based drum
 groove editor, sheet-music renderer, and practice tool. Click cells in the
 rhythm grid to place drum hits, see them rendered as real drum notation, play
@@ -73,10 +73,19 @@ Lane characters — hi-hat: `x` normal, `X` accent, `o` open, `+` foot-close,
 normal, `O` accent, `g` ghost, `x` cross-stick, `f` flam, `d` drag, `b` buzz;
 kick: `o` kick, `x` hi-hat foot splash, `X` both.
 
+## Practice features
+
+- **Presets** — rock, funk, disco, shuffle, jazz ride, 6/8 and more starters.
+- **Toms** — four tom rows (toggle "Show toms"); they share the URL format
+  (`T1`–`T4`) and render on the staff.
+- **Count-in** — one measure of clicks before the groove starts.
+- **Auto speed-up** — raise the tempo by +1/+2/+5/+10 BPM every loop (capped
+  at 400) for practice ramps; the live BPM shows next to the tempo control.
+
 ## Known limitations (vs. full GrooveScribe)
 
 - Ghost notes play quietly but render as plain noteheads (no parentheses).
-- Toms/stickings round-trip through the URL but have no grid rows yet.
-- No MIDI/PNG export, presets library, or embed mode.
+- Stickings round-trip is not yet supported (no stickings row).
+- No MIDI/PNG export or embed mode.
 
 See `groovescribe-clone-prompt.md` for the full build spec this implements.

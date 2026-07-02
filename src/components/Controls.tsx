@@ -1,4 +1,5 @@
 import { ALLOWED_DIVS, GrooveData, isTripletDiv } from '../lib/grooveData';
+import { PRESETS } from '../lib/presets';
 
 const DIV_LABELS: Record<number, string> = {
   8: '8th notes',
@@ -12,17 +13,51 @@ const DIV_LABELS: Record<number, string> = {
 interface Props {
   groove: GrooveData;
   playing: boolean;
+  liveBpm: number | null;
+  countIn: boolean;
+  rampBpm: number;
+  showToms: boolean;
   onChange: (changes: Partial<GrooveData>) => void;
   onPlayStop: () => void;
   onShare: () => void;
+  onLoadPreset: (query: string) => void;
+  onCountInChange: (v: boolean) => void;
+  onRampChange: (v: number) => void;
+  onToggleToms: () => void;
 }
 
-export function Controls({ groove, playing, onChange, onPlayStop, onShare }: Props) {
+export function Controls({
+  groove,
+  playing,
+  liveBpm,
+  countIn,
+  rampBpm,
+  showToms,
+  onChange,
+  onPlayStop,
+  onShare,
+  onLoadPreset,
+  onCountInChange,
+  onRampChange,
+  onToggleToms,
+}: Props) {
   return (
     <div className="controls">
       <button className={playing ? 'play stop' : 'play'} onClick={onPlayStop}>
         {playing ? '■ Stop' : '▶ Play'}
       </button>
+
+      <label>
+        Preset
+        <select value="" onChange={(e) => e.target.value && onLoadPreset(e.target.value)}>
+          <option value="">load…</option>
+          {PRESETS.map((p) => (
+            <option key={p.name} value={p.query}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <label>
         Tempo
@@ -44,6 +79,9 @@ export function Controls({ groove, playing, onChange, onPlayStop, onShare }: Pro
           }}
         />
         <span className="unit">BPM</span>
+        {liveBpm !== null && liveBpm !== groove.tempo && (
+          <span className="live-bpm">now {liveBpm}</span>
+        )}
       </label>
 
       <label>
@@ -125,6 +163,30 @@ export function Controls({ groove, playing, onChange, onPlayStop, onShare }: Pro
           <option value={16}>16ths</option>
         </select>
       </label>
+
+      <label>
+        <input
+          type="checkbox"
+          checked={countIn}
+          onChange={(e) => onCountInChange(e.target.checked)}
+        />
+        Count-in
+      </label>
+
+      <label title="Raise the tempo each time the loop repeats">
+        Speed up
+        <select value={rampBpm} onChange={(e) => onRampChange(Number(e.target.value))}>
+          <option value={0}>off</option>
+          <option value={1}>+1/loop</option>
+          <option value={2}>+2/loop</option>
+          <option value={5}>+5/loop</option>
+          <option value={10}>+10/loop</option>
+        </select>
+      </label>
+
+      <button className="toms-toggle" onClick={onToggleToms}>
+        {showToms ? 'Hide toms' : 'Show toms'}
+      </button>
 
       <button className="share" onClick={onShare} title="Copy shareable link">
         Copy link

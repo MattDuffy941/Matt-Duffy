@@ -7,7 +7,7 @@ import {
   remapLane,
   totalCells,
 } from './lib/grooveData';
-import { parseUrl, toUrl } from './lib/urlCodec';
+import { parseUrl, toUrl, laneHasHits } from './lib/urlCodec';
 import { grooveToAbc } from './lib/grooveToAbc';
 import { GroovePlayer } from './lib/audio/player';
 import { Controls } from './components/Controls';
@@ -44,12 +44,17 @@ export default function App() {
   );
   const [playing, setPlaying] = useState(false);
   const [currentCell, setCurrentCell] = useState(-1);
+  const [liveBpm, setLiveBpm] = useState<number | null>(null);
+  const [countIn, setCountIn] = useState(false);
+  const [rampBpm, setRampBpm] = useState(0);
+  const [showToms, setShowToms] = useState(() => groove.toms.some((l) => laneHasHits(l)));
   const playerRef = useRef<GroovePlayer | null>(null);
 
   const getPlayer = useCallback((): GroovePlayer => {
     if (!playerRef.current) {
       playerRef.current = new GroovePlayer();
       playerRef.current.onStep = (cell) => setCurrentCell(cell);
+      playerRef.current.onTempoChange = (bpm) => setLiveBpm(bpm);
     }
     return playerRef.current;
   }, []);
@@ -78,9 +83,13 @@ export default function App() {
         } else if (lane === 'S') {
           next.snare[index] = cycleNext(S_CYCLE, prev.snare[index]);
           if (next.snare[index]) getPlayer().preview({ snare: next.snare[index]! });
-        } else {
+        } else if (lane === 'K') {
           next.kick[index] = cycleNext(K_CYCLE, prev.kick[index]);
           if (next.kick[index]) getPlayer().preview({ kick: next.kick[index]! });
+        } else {
+          const t = (Number(lane[1]) - 1) as 0 | 1 | 2 | 3;
+          next.toms[t][index] = prev.toms[t][index] ? null : 'normal';
+          if (next.toms[t][index]) getPlayer().preview({ tom: (t + 1) as 1 | 2 | 3 | 4 });
         }
         return next;
       });
@@ -107,17 +116,25 @@ export default function App() {
     });
   }, []);
 
+  const handleLoadPreset = useCallback((query: string) => {
+    const g = parseUrl(query);
+    setGroove(g);
+    setShowToms((prev) => prev || g.toms.some((l) => laneHasHits(l)));
+  }, []);
+
   const handlePlayStop = useCallback(() => {
     const player = getPlayer();
     if (playing) {
       player.stop();
       setPlaying(false);
       setCurrentCell(-1);
+      setLiveBpm(null);
     } else {
-      player.start(groove);
+      player.start(groove, { countIn, rampBpmPerLoop: rampBpm });
       setPlaying(true);
+      setLiveBpm(null);
     }
-  }, [playing, groove, getPlayer]);
+  }, [playing, groove, countIn, rampBpm, getPlayer]);
 
   const handleShare = useCallback(() => {
     void navigator.clipboard?.writeText(window.location.href);
@@ -126,21 +143,34 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>GrooveScribe Clone</h1>
+        <h1>Groove Builder</h1>
         <p className="tagline">Click the grid to write a groove — the URL is your document.</p>
       </header>
       <Controls
         groove={groove}
         playing={playing}
+        liveBpm={liveBpm}
+        countIn={countIn}
+        rampBpm={rampBpm}
+        showToms={showToms}
         onChange={handleChange}
         onPlayStop={handlePlayStop}
         onShare={handleShare}
+        onLoadPreset={handleLoadPreset}
+        onCountInChange={setCountIn}
+        onRampChange={setRampBpm}
+        onToggleToms={() => setShowToms((v) => !v)}
       />
-      <GridEditor groove={groove} currentCell={currentCell} onToggle={handleToggle} />
+      <GridEditor
+        groove={groove}
+        currentCell={currentCell}
+        showToms={showToms}
+        onToggle={handleToggle}
+      />
       <Notation abc={abc} />
       <footer>
         <p>
-          A clean-room recreation of the core of{' '}
+          Groove Builder — a clean-room recreation of the core of{' '}
           <a href="https://github.com/montulli/GrooveScribe" target="_blank" rel="noreferrer">
             GrooveScribe
           </a>
