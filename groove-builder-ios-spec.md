@@ -148,6 +148,11 @@ enum URLCodec {
 `?TimeSig=4/4&Div=16&Tempo=80&Measures=1&H=|----------------|&S=|----------------|&K=|----------------|`
 and for a groove exported from the website (paste a real share link into a test).
 
+> **Phases 1 & 2 are already written** for you as a compiling Swift Package at
+> [`ios/GrooveCore`](ios/GrooveCore) — `GrooveData.swift`, `URLCodec.swift`, and
+> an XCTest suite. `cd ios/GrooveCore && swift test`, or add it to the Xcode
+> project as a local package (`import GrooveCore`). Start Phase 3 against it.
+
 ---
 
 ## 5. Phase 3 — Grid editor (SwiftUI)
