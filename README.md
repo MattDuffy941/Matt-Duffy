@@ -85,7 +85,6 @@ kick: `o` kick, `x` hi-hat foot splash, `X` both.
 ## Known limitations (vs. full GrooveScribe)
 
 - Ghost notes play quietly but render as plain noteheads (no parentheses).
-- Stickings round-trip is not yet supported (no stickings row).
 - No MIDI export or embed mode (PDF download is built in).
 
 See `groovescribe-clone-prompt.md` for the full build spec this implements.
