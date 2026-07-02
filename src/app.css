@@ -297,6 +297,13 @@ footer a {
 
 /* Export PDF: print only the engraved sheet (title/tempo live inside the SVG) */
 @media print {
+  /* Zero page margins leave the browser nowhere to draw its header/footer
+     (title, date, URL, page number) — the sheet's own padding below keeps
+     the music off the paper edge instead. */
+  @page {
+    margin: 0;
+  }
+
   body {
     background: white;
   }
@@ -310,7 +317,7 @@ footer a {
 
   .app {
     max-width: none;
-    padding: 0;
+    padding: 16mm 14mm;
   }
 
   .notation {
