@@ -15,6 +15,14 @@ describe('grooveToAbc — header', () => {
     expect(abc).toContain('V:2 stem=down');
     expect(abc).toContain('%%percmap g closed-hi-hat x');
     expect(abc).toContain('%%percmap F acoustic-bass-drum');
+    expect(abc).toContain('Q:1/4=120');
+  });
+
+  it('engraves the title when set', () => {
+    const abc = grooveToAbc(
+      parseUrl('?TimeSig=4/4&Div=16&Title=My%20Groove&Tempo=80&Measures=1'),
+    );
+    expect(abc).toContain('T:My Groove');
   });
 
   it('uses L:1/8 written units for 8th-note triplets (Div=12)', () => {

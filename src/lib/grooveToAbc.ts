@@ -238,6 +238,7 @@ export function grooveToAbc(g: GrooveData): string {
     'X:1',
     ...(g.title ? [`T:${g.title}`] : []),
     ...(g.author ? [`C:${g.author}`] : []),
+    `Q:1/4=${g.tempo}`,
     `M:${g.timeSig.top}/${g.timeSig.bottom}`,
     `L:1/${unitDenom}`,
     '%%score (1 2)',

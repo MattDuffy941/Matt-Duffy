@@ -60,6 +60,17 @@ export function Controls({
       </label>
 
       <label>
+        Title
+        <input
+          type="text"
+          className="title-input"
+          placeholder="Name this groove…"
+          value={groove.title}
+          onChange={(e) => onChange({ title: e.target.value })}
+        />
+      </label>
+
+      <label>
         Tempo
         <input
           type="range"
@@ -186,6 +197,14 @@ export function Controls({
 
       <button className="toms-toggle" onClick={onToggleToms}>
         {showToms ? 'Hide toms' : 'Show toms'}
+      </button>
+
+      <button
+        className="toms-toggle"
+        onClick={() => window.print()}
+        title="Print the sheet music — choose 'Save as PDF' in the print dialog"
+      >
+        Export PDF
       </button>
 
       <button className="share" onClick={onShare} title="Copy shareable link">

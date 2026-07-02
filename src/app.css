@@ -64,6 +64,16 @@ header h1 {
   opacity: 0.45;
 }
 
+.controls .title-input {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  width: 150px;
+}
+
 .controls select,
 .controls input[type='number'] {
   background: var(--panel-2);
@@ -283,4 +293,30 @@ footer {
 
 footer a {
   color: var(--accent);
+}
+
+/* Export PDF: print only the engraved sheet (title/tempo live inside the SVG) */
+@media print {
+  body {
+    background: white;
+  }
+
+  header,
+  .controls,
+  .grid-editor,
+  footer {
+    display: none;
+  }
+
+  .app {
+    max-width: none;
+    padding: 0;
+  }
+
+  .notation {
+    background: white;
+    color: black;
+    border-radius: 0;
+    padding: 0;
+  }
 }
