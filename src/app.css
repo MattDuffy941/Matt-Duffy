@@ -232,6 +232,107 @@ button.share:active {
   filter: brightness(1.25);
 }
 
+/* My Grooves library */
+.saved-grooves {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.saved-grooves summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.saved-grooves ul {
+  list-style: none;
+  margin: 10px 0 4px;
+  padding: 0;
+}
+
+.saved-grooves li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.saved-load {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: left;
+  flex: 1;
+}
+
+.saved-load:hover {
+  text-decoration: underline;
+}
+
+.saved-date {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.saved-delete {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.saved-delete:hover {
+  color: #e0665c;
+}
+
+.saved-empty {
+  color: var(--muted);
+  margin: 8px 0 2px;
+}
+
+/* Embed mode (&Embed=1) — compact player for iframes in lesson pages */
+.embed {
+  padding: 8px;
+}
+
+.embed-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.embed-bar .play {
+  padding: 6px 14px;
+}
+
+.embed-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.embed-open {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.embed-open:hover {
+  text-decoration: underline;
+}
+
 /* Right-click cell menu */
 .menu-backdrop {
   position: fixed;

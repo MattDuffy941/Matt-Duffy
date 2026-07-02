@@ -17,6 +17,9 @@ import {
 } from './lib/grooveData';
 import { grooveToAbc } from './lib/grooveToAbc';
 import { exportPdf } from './lib/exportPdf';
+import { SavedGroove, deleteGroove, listGrooves, saveGroove } from './lib/library';
+import { EmbedView } from './components/EmbedView';
+import { SavedGrooves } from './components/SavedGrooves';
 import { GroovePlayer } from './lib/audio/player';
 import { Controls } from './components/Controls';
 import { GridEditor, Lane } from './components/GridEditor';
@@ -48,6 +51,9 @@ function cycleNext<H>(cycle: (H | null)[], current: H | null): H | null {
   return cycle[(i + 1) % cycle.length];
 }
 
+/** &Embed=1 renders the compact iframe player instead of the editor. */
+const IS_EMBED = /(^|[?&])embed=1(&|$)/i.test(window.location.search);
+
 export default function App() {
   const [groove, setGroove] = useState<GrooveData>(() =>
     parseUrl(window.location.search || DEFAULT_GROOVE_URL),
@@ -59,6 +65,7 @@ export default function App() {
   const [rampBpm, setRampBpm] = useState(0);
   const [showToms, setShowToms] = useState(() => groove.toms.some((l) => laneHasHits(l)));
   const [showSticking, setShowSticking] = useState(() => laneHasHits(groove.stickings));
+  const [saved, setSaved] = useState<SavedGroove[]>(() => listGrooves());
   const playerRef = useRef<GroovePlayer | null>(null);
 
   const getPlayer = useCallback((): GroovePlayer => {
@@ -70,8 +77,10 @@ export default function App() {
     return playerRef.current;
   }, []);
 
-  // The URL is the document: every edit rewrites it.
+  // The URL is the document: every edit rewrites it. (Skipped in embed mode,
+  // where the URL must keep its &Embed=1 flag and nothing is editable.)
   useEffect(() => {
+    if (IS_EMBED) return;
     window.history.replaceState(null, '', window.location.pathname + toUrl(groove));
   }, [groove]);
 
@@ -161,12 +170,34 @@ export default function App() {
     });
   }, []);
 
-  const handleLoadPreset = useCallback((query: string) => {
+  const handleLoadQuery = useCallback((query: string) => {
     const g = parseUrl(query);
     setGroove(g);
     setShowToms((prev) => prev || g.toms.some((l) => laneHasHits(l)));
     setShowSticking((prev) => prev || laneHasHits(g.stickings));
   }, []);
+
+  const handleSave = useCallback(() => {
+    const name = groove.title.trim() || window.prompt('Name this groove:')?.trim();
+    if (!name) return;
+    const named = groove.title.trim() === name ? groove : { ...cloneGroove(groove), title: name };
+    if (named !== groove) setGroove(named);
+    saveGroove(name, toUrl(named));
+    setSaved(listGrooves());
+  }, [groove]);
+
+  const handleDeleteSaved = useCallback((id: string) => {
+    deleteGroove(id);
+    setSaved(listGrooves());
+  }, []);
+
+  const handleCopyEmbed = useCallback(() => {
+    const url =
+      window.location.origin + window.location.pathname + toUrl(groove) + '&Embed=1';
+    const title = groove.title || 'Groove Builder';
+    const snippet = `<iframe src="${url}" width="100%" height="300" style="border:0;border-radius:8px" title="${title}" loading="lazy"></iframe>`;
+    void navigator.clipboard?.writeText(snippet);
+  }, [groove]);
 
   const handlePlayStop = useCallback(() => {
     const player = getPlayer();
@@ -191,6 +222,10 @@ export default function App() {
     if (container) void exportPdf(container, groove.title);
   }, [groove.title]);
 
+  if (IS_EMBED) {
+    return <EmbedView groove={groove} />;
+  }
+
   return (
     <div className="app">
       <header>
@@ -208,13 +243,16 @@ export default function App() {
         onChange={handleChange}
         onPlayStop={handlePlayStop}
         onShare={handleShare}
-        onLoadPreset={handleLoadPreset}
+        onLoadPreset={handleLoadQuery}
         onCountInChange={setCountIn}
         onRampChange={setRampBpm}
         onToggleToms={() => setShowToms((v) => !v)}
         onToggleSticking={() => setShowSticking((v) => !v)}
         onExportPdf={handleExportPdf}
+        onSave={handleSave}
+        onCopyEmbed={handleCopyEmbed}
       />
+      <SavedGrooves grooves={saved} onLoad={handleLoadQuery} onDelete={handleDeleteSaved} />
       <GridEditor
         groove={groove}
         currentCell={currentCell}

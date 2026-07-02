@@ -27,6 +27,8 @@ interface Props {
   onToggleToms: () => void;
   onToggleSticking: () => void;
   onExportPdf: () => void;
+  onSave: () => void;
+  onCopyEmbed: () => void;
 }
 
 export function Controls({
@@ -46,6 +48,8 @@ export function Controls({
   onToggleToms,
   onToggleSticking,
   onExportPdf,
+  onSave,
+  onCopyEmbed,
 }: Props) {
   return (
     <div className="controls">
@@ -211,6 +215,14 @@ export function Controls({
 
       <button
         className="toms-toggle"
+        onClick={onSave}
+        title="Save this groove to My Grooves on this device"
+      >
+        Save
+      </button>
+
+      <button
+        className="toms-toggle"
         onClick={onExportPdf}
         title="Download the sheet music as a PDF"
       >
@@ -219,6 +231,14 @@ export function Controls({
 
       <button className="share" onClick={onShare} title="Copy shareable link">
         Copy link
+      </button>
+
+      <button
+        className="toms-toggle embed-btn"
+        onClick={onCopyEmbed}
+        title="Copy an <iframe> snippet to embed this groove in a lesson page"
+      >
+        Embed code
       </button>
     </div>
   );
