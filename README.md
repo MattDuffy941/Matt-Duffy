@@ -1,0 +1,82 @@
+# GrooveScribe Clone
+
+A clean-room recreation of the base functionality of
+[GrooveScribe](https://github.com/montulli/GrooveScribe) — a browser-based drum
+groove editor, sheet-music renderer, and practice tool. Click cells in the
+rhythm grid to place drum hits, see them rendered as real drum notation, play
+them back with a metronome, and share the groove as a URL.
+
+**The URL is the document.** The entire groove state lives in the query string,
+using the same format as the original GrooveScribe, so links are compatible:
+
+```
+?TimeSig=4/4&Div=16&Tempo=80&Measures=1&H=|x-x-x-x-x-x-x-x-|&S=|----O-------O---|&K=|o-------o-o-----|
+```
+
+## Running
+
+```sh
+npm install
+npm run dev      # dev server
+npm test         # unit tests (URL codec, timing math, ABC generation)
+npm run build    # static production build in dist/
+```
+
+100% client-side — deploy `dist/` to any static host.
+
+## Architecture
+
+```
+URL query string
+      │  parse (urlCodec.ts)
+      ▼
+GrooveData (grooveData.ts): timeSig, div, tempo, measures, swing, lanes[]
+      ├──────────► grooveToAbc.ts ──► abcjs ──► SVG sheet music
+      └──────────► audio/player.ts ──► Web Audio ──► synthesized drum kit
+      ▲
+      │  serialize — every edit rewrites the URL (share/permalink for free)
+```
+
+- **`src/lib/grooveData.ts`** — the typed model and the context-sensitive
+  tab-character maps (`x` means hi-hat in `H`, cross-stick in `S`, foot splash
+  in `K`; `-` is always a rest).
+- **`src/lib/urlCodec.ts`** — parse/serialize the query string. Hand-rolled
+  (not `URLSearchParams`) because `+` is a real character (closed hi-hat), not
+  a space. Case-insensitive params, `|`/space skipping, validation clamps.
+- **`src/lib/grooveToAbc.ts`** — grid → ABC notation: one percussion staff,
+  Hands voice (stems up) + Feet voice (stems down), X noteheads via
+  `%%percmap`, look-ahead durations so 8th patterns on a 16th grid render as
+  real 8th notes, chords with hoisted decorations, tuplet groups for triplet
+  divisions. Rendered with [abcjs](https://www.abcjs.net).
+- **`src/lib/audio/`** — sample-accurate playback using the
+  ["Two Clocks"](https://web.dev/articles/audio-scheduling) lookahead
+  scheduler against `AudioContext.currentTime`. Drum sounds are procedurally
+  synthesized into `AudioBuffer`s at startup (no sample assets). Swing delays
+  off-beat cells toward the triplet position; the metronome is an independent
+  click stream locked to the same clock.
+
+## URL format
+
+| Param | Meaning |
+|---|---|
+| `TimeSig` | `top/bottom` (top 1–32, bottom 2/4/8/16) |
+| `Div` | grid resolution per whole note: 8, 16, 32 straight; 12, 24, 48 triplets |
+| `Tempo` | BPM 20–400 |
+| `Measures` | 1–100 |
+| `Swing` | 0–100 % (straight divisions; written only when > 0) |
+| `MetronomeFreq` | 0 / 4 / 8 / 16 (written only when ≠ 0) |
+| `H` `S` `K` | ASCII tab, one char per grid cell |
+| `T1`–`T4` | tom lanes (written only when used) |
+
+Lane characters — hi-hat: `x` normal, `X` accent, `o` open, `+` foot-close,
+`r` ride, `b` ride bell, `c` crash, `s` stacker, `m` cowbell; snare: `o`
+normal, `O` accent, `g` ghost, `x` cross-stick, `f` flam, `d` drag, `b` buzz;
+kick: `o` kick, `x` hi-hat foot splash, `X` both.
+
+## Known limitations (vs. full GrooveScribe)
+
+- Ghost notes play quietly but render as plain noteheads (no parentheses).
+- Toms/stickings round-trip through the URL but have no grid rows yet.
+- No MIDI/PNG export, presets library, or embed mode.
+
+See `groovescribe-clone-prompt.md` for the full build spec this implements.
