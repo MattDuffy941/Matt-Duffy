@@ -319,4 +319,9 @@ footer a {
     border-radius: 0;
     padding: 0;
   }
+
+  /* A lone bar prints large and centred rather than small and top-left. */
+  .notation.single-measure {
+    padding: 0 14%;
+  }
 }

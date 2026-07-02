@@ -15,7 +15,11 @@ describe('grooveToAbc — header', () => {
     expect(abc).toContain('V:2 stem=down');
     expect(abc).toContain('%%percmap g closed-hi-hat x');
     expect(abc).toContain('%%percmap F acoustic-bass-drum');
-    expect(abc).toContain('Q:1/4=120');
+    // tempo is a text line above the clef, not a Q: field (which collides
+    // with hi-hat decorations over the first beat)
+    expect(abc).toContain('%%text ♩ = 120');
+    expect(abc).not.toContain('Q:');
+    expect(abc).toContain('%%stretchlast 1');
   });
 
   it('engraves the title when set', () => {
@@ -104,8 +108,8 @@ describe('grooveToAbc — body', () => {
     );
     expect(abc).toContain('%%score (3 1 2)');
     const sticks = abc.split('\n').find((l) => l.startsWith('[V:3]'))!;
-    expect(sticks).toContain('"^R"x');
-    expect(sticks).toContain('"^L"x');
+    expect(sticks).toContain('"R"x');
+    expect(sticks).toContain('"L"x');
     // gaps are invisible rests, not visible ones
     expect(sticks).toContain('x4');
     expect(sticks).not.toMatch(/z/);

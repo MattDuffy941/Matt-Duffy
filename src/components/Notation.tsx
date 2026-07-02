@@ -3,9 +3,11 @@ import abcjs from 'abcjs';
 
 interface Props {
   abc: string;
+  /** Single-measure grooves get centred and enlarged when printed. */
+  single: boolean;
 }
 
-export function Notation({ abc }: Props) {
+export function Notation({ abc, single }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -19,5 +21,5 @@ export function Notation({ abc }: Props) {
     });
   }, [abc]);
 
-  return <div className="notation" ref={ref} />;
+  return <div className={single ? 'notation single-measure' : 'notation'} ref={ref} />;
 }

@@ -74,6 +74,11 @@ export default function App() {
     window.history.replaceState(null, '', window.location.pathname + toUrl(groove));
   }, [groove]);
 
+  // Browser tab / print header shows the groove's name.
+  useEffect(() => {
+    document.title = groove.title ? `${groove.title} — Groove Builder` : 'Groove Builder — Drum Groove Editor';
+  }, [groove.title]);
+
   // Live edits reach the player without restarting playback.
   useEffect(() => {
     playerRef.current?.updateGroove(groove);
@@ -211,7 +216,7 @@ export default function App() {
         onToggle={handleToggle}
         onSetCell={handleSetCell}
       />
-      <Notation abc={abc} />
+      <Notation abc={abc} single={groove.measures === 1} />
       <footer>
         <p>
           Groove Builder — a clean-room recreation of the core of{' '}

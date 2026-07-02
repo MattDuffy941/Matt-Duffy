@@ -162,11 +162,13 @@ function feetCell(g: GrooveData, i: number): CellNote | null {
 
 /**
  * Stickings voice: invisible rests (`x`) carrying R/L/B text above the staff.
- * The letter is an ABC annotation (`"^R"`) attached to the invisible rest.
+ * The letter is written as a chord symbol (`"R"`), which abcjs aligns on a
+ * single baseline across the line — annotations (`"^R"`) would ride up and
+ * down with beams and decorations underneath them.
  */
 function stickingsCell(g: GrooveData, i: number): CellNote | null {
   const s = g.stickings[i];
-  return s ? { graces: '', decos: [`"^${STICKING_HIT_TO_CHAR[s]}"`], pitches: ['x'] } : null;
+  return s ? { graces: '', decos: [`"${STICKING_HIT_TO_CHAR[s]}"`], pitches: ['x'] } : null;
 }
 
 function formatNote(note: CellNote, dur: number): string {
@@ -251,11 +253,14 @@ export function grooveToAbc(g: GrooveData): string {
     'X:1',
     ...(g.title ? [`T:${g.title}`] : []),
     ...(g.author ? [`C:${g.author}`] : []),
-    `Q:1/4=${g.tempo}`,
     `M:${g.timeSig.top}/${g.timeSig.bottom}`,
     `L:1/${unitDenom}`,
+    '%%stretchlast 1', // fill the line width — a lone bar renders big, not cramped
     hasStickings ? '%%score (3 1 2)' : '%%score (1 2)',
     ...PERCMAP_LINES,
+    // Tempo as a plain text line above the clef (the Q: field renders over
+    // the first notes and collides with hi-hat open/close marks).
+    `%%text ♩ = ${g.tempo}`,
     'K:C clef=perc',
     'V:1 stem=up',
     'V:2 stem=down',
