@@ -1,373 +1,336 @@
-# Groove Builder — iOS / iPadOS App Build Spec
+# Groove Builder — Fully Native SwiftUI iOS / iPadOS App Build Spec
 
-> Hand this to Claude Code inside your Xcode project. It builds a native
-> SwiftUI app that wraps the existing Groove Builder web app, running fully
-> offline, with native audio, a native PDF share sheet, and proper iPad/iPhone
-> behaviour. Work through it phase by phase; each phase has an acceptance check.
-
----
-
-## 0. What we're building & why this approach
-
-Groove Builder is a 100% client-side web app (React + TypeScript, no backend,
-all state in the URL). The fastest, lowest-risk way to ship it on the App Store
-is **not** a rewrite — it's a thin **native SwiftUI shell** that loads the
-already-built web app inside a `WKWebView`, served from files bundled in the
-app so it works with no internet.
-
-We add three native pieces so it behaves like a real app, not a bookmark:
-
-1. **Offline serving** via a custom URL scheme handler (gives the web app a
-   real origin so the History API / shareable-URL state keeps working).
-2. **Native audio session** so playback sounds through the silent/mute switch
-   and behaves correctly with other audio.
-3. **Native PDF share sheet** — iOS web views can't "download" a file the way
-   desktop browsers do, so PDF export is bridged to a native share sheet
-   (Save to Files, AirDrop, Print, Mail…).
-
-**Read this honestly before you start (App Store Guideline 4.2):** Apple
-sometimes rejects apps that are "just a website in a wrapper." The three native
-features above, full offline operation, and the app being a genuine creation
-tool are the standard mitigations and usually clear review. If it's rejected,
-the fix is to add more native feel (haptics on taps, a native launch
-experience) — noted in Phase 7.
+> Hand this to Claude Code inside your Xcode project. This builds a **100%
+> native SwiftUI app** — no web view, no bundled HTML. The grid, the drum
+> notation, the audio engine, PDF export, and the saved-groove library are all
+> reimplemented in Swift. The one hard rule that keeps it interoperable with the
+> web version: **the URL format is identical**, so links made on the website
+> open in the app and vice-versa.
+>
+> Work through the phases in order; each has an acceptance check. This is a real
+> rewrite — budget **2–4 weeks**, not a day. In return you get a genuinely
+> native app with no App Store "wrapper" risk, the best possible feel
+> (haptics, Apple Pencil, smooth 120 Hz drawing), and full offline operation.
 
 ---
 
-## 1. Prerequisites (you, once)
+## 0. Architecture
 
-- A **Mac** with **Xcode 16+**.
-- An **Apple Developer Program** membership ($99/year) — required to run on a
-  physical iPad and to submit to the App Store. (You can build to the simulator
-  without it.)
-- The built web app. In the Groove Builder repo run `npm run build`; this
-  produces a `dist/` folder. You'll copy its contents into the Xcode project in
-  Phase 3.
+```
+GrooveCore  (pure Swift, no UI — mirrors the web app's src/lib)
+ ├─ GrooveData.swift      structs/enums for the document + tab-char maps
+ ├─ URLCodec.swift        parse/serialize the query string (LINK-COMPATIBLE)
+ ├─ Timing.swift          cell → beats/seconds, swing, metronome positions
+ ├─ Engraver.swift        groove → laid-out notation primitives (shared by
+ │                        the on-screen Canvas AND the PDF renderer)
+ ├─ AudioEngine.swift     AVAudioEngine + lookahead scheduler + drum synth
+ └─ Library.swift         save/load "My Grooves" (Codable + files)
 
-Decisions already made for you (so Claude Code shouldn't ask):
+GrooveBuilder  (SwiftUI app)
+ ├─ GrooveBuilderApp.swift   @main, audio session, deep-link handling
+ ├─ EditorView.swift         top-level screen (controls + grid + notation)
+ ├─ ControlsView.swift       tempo, time sig, div, measures, swing, click…
+ ├─ GridEditorView.swift     the tappable lane/cell grid + long-press menu
+ ├─ NotationView.swift       Canvas that draws Engraver output
+ ├─ MyGroovesView.swift      saved library list
+ └─ Share/ExportPDF.swift    UIActivity share + PDFKit export
+```
+
+Pattern: **MVVM**. `GrooveCore` types are value types (`struct`/`enum`), the
+document lives in an `@Observable` view-model, and the URL is still the
+canonical serialization (so save = store the query string; share = the URL).
+
+The golden rule: **`GrooveCore` is a faithful port of the web app's `src/lib`**.
+Keep the same field names, the same validation clamps, and the exact same
+character maps so a groove round-trips byte-for-byte with the website.
+
+---
+
+## 1. Prerequisites
+
+- Mac with **Xcode 16+**.
+- **Apple Developer Program** ($99/yr) for device install + App Store.
+- The web app's `src/lib` as the reference implementation to port from:
+  `grooveData.ts`, `urlCodec.ts`, `timing.ts`, `grooveToAbc.ts` (layout logic),
+  `audio/player.ts`, `audio/drumSynth.ts`, `library.ts`.
+
+Fixed decisions (don't re-ask):
 
 | Setting | Value |
 |---|---|
 | App name | Groove Builder |
-| Bundle identifier | `com.wirralmusicfactory.groovebuilder` |
-| Deployment target | iOS 16.0 |
+| Bundle id | `com.wirralmusicfactory.groovebuilder` |
+| Deployment target | iOS 17.0 (for `@Observable` + modern Canvas) |
 | Devices | Universal (iPhone + iPad) |
-| Interface | SwiftUI (App lifecycle) |
-| Orientations | Portrait + Landscape (both, esp. iPad) |
-| Internet required | No — fully offline |
+| Interface | SwiftUI, no storyboards |
 | Data collected | None |
+| URL format | **Identical to the web app** (see Phase 2) |
 
 ---
 
-## 2. Master prompt (paste this into Claude Code first)
+## 2. Master prompt (paste into Claude Code first)
 
-> You are working in a new Xcode project for a SwiftUI iOS/iPadOS app called
-> "Groove Builder", bundle id `com.wirralmusicfactory.groovebuilder`,
-> deployment target iOS 16, universal (iPhone + iPad). The app is a thin native
-> shell around a bundled web app loaded in a WKWebView. Implement the app in the
-> phases described in this spec: (3) bundle the web files and serve them offline
-> via a custom `app://` URL scheme handler; (4) configure the WKWebView and a
-> playback AVAudioSession; (5) bridge PDF export to a native share sheet via a
-> WKScriptMessageHandler named `exportPdf`; (6) set Info.plist, icons, launch
-> screen, orientations, and safe-area handling. Use the exact Swift shown in the
-> spec as a starting point and adapt to the project. After each phase, stop and
-> report the acceptance check result.
-
----
-
-## 3. Phase 1 — Project + bundled web files
-
-1. Create the Xcode project: **App**, SwiftUI, Swift, name **Groove Builder**,
-   bundle id `com.wirralmusicfactory.groovebuilder`, deployment target iOS 16,
-   uncheck Core Data / Tests if you like.
-2. From the web repo, build (`npm run build`) and copy **the contents of
-   `dist/`** into a folder named `web/` inside the Xcode project.
-   - Add it to Xcode as a **folder reference** (blue folder), *not* a group, so
-     every asset (including `assets/*`) is copied into the app bundle verbatim.
-   - Vite is configured with `base: './'`, so all asset paths are relative and
-     resolve correctly under the custom scheme.
-   - Re-run this copy on every web release. A helper script:
-     ```sh
-     rsync -a --delete /path/to/groove-builder/dist/ ./web/
-     ```
-
-**Acceptance check:** `web/index.html` and `web/assets/…` appear in "Copy Bundle
-Resources" for the app target.
+> You are building a fully native SwiftUI iOS/iPadOS app called "Groove
+> Builder", bundle id `com.wirralmusicfactory.groovebuilder`, deployment target
+> iOS 17, universal. It is a drum-groove editor: a tappable grid, real engraved
+> drum notation, sample-accurate playback with a metronome, PDF export, and a
+> saved-groove library. Do NOT use a WebView — every view is SwiftUI and all
+> logic is Swift. Implement it as a `GrooveCore` module (pure Swift: data model,
+> URL codec, timing, notation engraver, audio engine, library) plus a SwiftUI
+> app layer, following the phases in this spec. Critically, the URL query-string
+> format must be byte-for-byte identical to the existing web app so links are
+> cross-compatible — port `GrooveData`, the character maps, and the codec
+> exactly. After each phase, stop and report the acceptance check.
 
 ---
 
-## 4. Phase 2 — Offline scheme handler
+## 3. Phase 1 — GrooveCore data model
 
-Create `BundleSchemeHandler.swift`. It serves files from the bundled `web/`
-folder under an `app://local/…` origin.
+Port `src/lib/grooveData.ts` to `GrooveData.swift`.
 
 ```swift
-import WebKit
-import UniformTypeIdentifiers
+struct TimeSig: Equatable { var top: Int; var bottom: Int }
 
-final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
-    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
-        guard let url = task.request.url,
-              let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        else { task.didFailWithError(URLError(.badURL)); return }
+enum HihatHit: String { case normal, accent, open, close, ride, rideBell,
+    crash, stacker, cowbell, metronomeNormal, metronomeAccent }
+enum SnareHit: String { case normal, accent, ghost, xstick, flam, drag, buzz }
+enum KickHit:  String { case normal, splash, kickAndSplash }
+enum Sticking: String { case R, L, B }
 
-        // Map the path (ignoring query string) to a file in the bundle's web/ dir.
-        var path = comps.path
-        if path.isEmpty || path == "/" { path = "/index.html" }
-        let relative = String(path.drop(while: { $0 == "/" }))
-
-        guard let base = Bundle.main.resourceURL?.appendingPathComponent("web") else {
-            task.didFailWithError(URLError(.fileDoesNotExist)); return
-        }
-        let fileURL = base.appendingPathComponent(relative)
-
-        guard let data = try? Data(contentsOf: fileURL) else {
-            let resp = HTTPURLResponse(url: url, statusCode: 404,
-                                       httpVersion: "HTTP/1.1", headerFields: nil)!
-            task.didReceive(resp); task.didReceive(Data()); task.didFinish(); return
-        }
-
-        let response = HTTPURLResponse(
-            url: url, statusCode: 200, httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": Self.mime(for: fileURL.pathExtension),
-                           "Cache-Control": "no-cache",
-                           "Access-Control-Allow-Origin": "*"])!
-        task.didReceive(response)
-        task.didReceive(data)
-        task.didFinish()
-    }
-
-    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
-
-    private static func mime(for ext: String) -> String {
-        switch ext.lowercased() {
-        case "html": return "text/html; charset=utf-8"
-        case "js", "mjs": return "text/javascript; charset=utf-8"
-        case "css": return "text/css; charset=utf-8"
-        case "svg": return "image/svg+xml"
-        case "json": return "application/json"
-        case "png": return "image/png"
-        case "woff2": return "font/woff2"
-        case "woff": return "font/woff"
-        case "ico": return "image/x-icon"
-        default:
-            return UTType(filenameExtension: ext)?.preferredMIMEType
-                ?? "application/octet-stream"
-        }
-    }
+struct GrooveData: Equatable {
+    var timeSig = TimeSig(top: 4, bottom: 4)
+    var div = 16                 // cells per whole note (16, 12, 8, 24, 32, 48)
+    var tempo = 80               // BPM 20…400
+    var measures = 1             // 1…100
+    var swing = 0                // 0…100 %
+    var metronomeFreq = 0        // 0/4/8/16
+    var title = "", author = "", comments = ""
+    var hihat: [HihatHit?] = []
+    var snare: [SnareHit?] = []
+    var kick:  [KickHit?]  = []
+    var toms:  [[TomHit?]] = [[],[],[],[]]   // T1…T4
+    var stickings: [Sticking?] = []
 }
 ```
 
-**Acceptance check:** after Phase 3 wiring, the app loads the grid + notation
-with Wi-Fi **off**.
+Port helpers verbatim: `cellsPerMeasure`, `cellsPerBeat`, `totalCells`,
+`isTripletDiv` (`div % 12 == 0`), `remapLane`, and — critically — the
+**context-sensitive character maps** (hi-hat/snare/kick/tom/sticking → char and
+back). These are the interop contract.
+
+**Acceptance check:** a Swift unit test mirroring `urlCodec.test.ts` builds the
+same lane arrays from the same characters.
 
 ---
 
-## 5. Phase 3 — WebView, audio session, PDF bridge
+## 4. Phase 2 — URL codec (link compatibility)
 
-`WebView.swift` — a `UIViewRepresentable` wrapping `WKWebView`:
+Port `src/lib/urlCodec.ts` to `URLCodec.swift`. This is the interop keystone —
+match it exactly:
+
+- Hand-roll the query split (do **not** use `URLComponents.queryItems`, because
+  `+` is a literal character (closed hi-hat), not a space).
+- Case-insensitive parameter names.
+- Skip `|` and spaces in lane strings; `-` is a rest.
+- Same validation clamps (TimeSig top 1–32 / bottom ∈ {2,4,8,16}, Tempo 20–400,
+  Measures 1–100, Swing 0–100, Div ∈ {8,12,16,24,32,48}).
+- Emit optional params (Swing, MetronomeFreq, Title/Author/Comments, T1–T4,
+  Stickings) only when non-default, in the same order.
 
 ```swift
-import SwiftUI
-import WebKit
-import AVFoundation
-
-struct WebView: UIViewRepresentable {
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.allowsInlineMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = []
-        config.setURLSchemeHandler(BundleSchemeHandler(), forURLScheme: "app")
-        config.userContentController.add(context.coordinator, name: "exportPdf")
-
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.scrollView.bounces = false
-        webView.isOpaque = true
-        context.coordinator.webView = webView
-
-        webView.load(URLRequest(url: URL(string: "app://local/index.html")!))
-        return webView
-    }
-
-    func updateUIView(_ webView: WKWebView, context: Context) {}
-
-    final class Coordinator: NSObject, WKScriptMessageHandler {
-        weak var webView: WKWebView?
-
-        // JS calls window.webkit.messageHandlers.exportPdf.postMessage({filename, base64})
-        func userContentController(_ uc: WKUserContentController,
-                                   didReceive message: WKScriptMessage) {
-            guard message.name == "exportPdf",
-                  let body = message.body as? [String: Any],
-                  let b64 = body["base64"] as? String,
-                  let data = Data(base64Encoded: b64) else { return }
-            let name = (body["filename"] as? String) ?? "groove.pdf"
-
-            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-            try? data.write(to: tmp)
-
-            let av = UIActivityViewController(activityItems: [tmp],
-                                              applicationActivities: nil)
-            // iPad requires a source rect or it crashes.
-            if let pop = av.popoverPresentationController, let v = webView {
-                pop.sourceView = v
-                pop.sourceRect = CGRect(x: v.bounds.midX, y: v.bounds.midY,
-                                        width: 0, height: 0)
-                pop.permittedArrowDirections = []
-            }
-            Self.topViewController()?.present(av, animated: true)
-        }
-
-        static func topViewController() -> UIViewController? {
-            let window = UIApplication.shared.connectedScenes
-                .compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
-            var top = window?.rootViewController
-            while let presented = top?.presentedViewController { top = presented }
-            return top
-        }
-    }
+enum URLCodec {
+    static func parse(_ query: String) -> GrooveData { /* … */ }
+    static func serialize(_ g: GrooveData) -> String  { /* "?TimeSig=…" */ }
 }
 ```
 
-`ContentView.swift`:
-
-```swift
-import SwiftUI
-
-struct ContentView: View {
-    var body: some View {
-        WebView().ignoresSafeArea()   // web CSS handles safe-area insets
-    }
-}
-```
-
-`GrooveBuilderApp.swift` — configure the audio session so sound plays through
-the mute switch:
-
-```swift
-import SwiftUI
-import AVFoundation
-
-@main
-struct GrooveBuilderApp: App {
-    init() {
-        try? AVAudioSession.sharedInstance()
-            .setCategory(.playback, mode: .default, options: [])
-        try? AVAudioSession.sharedInstance().setActive(true)
-    }
-    var body: some Scene {
-        WindowGroup { ContentView() }
-    }
-}
-```
-
-**Acceptance check:** Play works with the **hardware mute switch on**; tapping
-**Export PDF** opens the iOS share sheet with a `.pdf` you can Save to Files.
+**Acceptance check:** `serialize(parse(x)) == x` for the reference URL
+`?TimeSig=4/4&Div=16&Tempo=80&Measures=1&H=|----------------|&S=|----------------|&K=|----------------|`
+and for a groove exported from the website (paste a real share link into a test).
 
 ---
 
-## 6. Phase 4 — Info.plist, icons, launch, orientation
+## 5. Phase 3 — Grid editor (SwiftUI)
 
-- **App Icon:** add a 1024×1024 PNG to the asset catalog's AppIcon (Xcode 16
-  can generate the rest from the single size). Design suggestion: the grid +
-  a drum-notation X on the app's dark panel colour (`#1e2128`).
-- **Launch Screen:** a simple storyboard/launch screen with the dark background
-  colour so startup isn't a white flash.
-- **Orientation:** enable Portrait, Landscape Left, Landscape Right for both
-  iPhone and iPad (iPad users will want landscape for wide grids).
-- **Status bar:** light content on the dark background.
-- **Info.plist:** no privacy-permission keys are needed (no camera, mic,
-  location, tracking). Because everything is bundled and same-origin, no App
-  Transport Security exceptions are required either.
-- **Display name:** `Groove Builder`.
+`GridEditorView.swift`: lanes top-to-bottom (Sticking, Hi-hat, Hi tom, Mid tom,
+Snare, Floor tom, Kick — toms/sticking rows toggle on). Each cell is a
+`Button`; columns come from `TimeSig × Div × Measures`, with beat/measure
+divider styling.
 
-**Acceptance check:** launches to the dark screen (no white flash), rotates
-freely on iPad, icon shows on the home screen.
+- **Tap** cycles the common sounds for that lane (same cycles as the web app:
+  hi-hat → normal/accent/open, snare → normal/accent/ghost, kick → normal/
+  splash/both, toms → on/off, sticking → R/L/B).
+- **Long-press** opens the full sound menu — use a SwiftUI `.contextMenu` (this
+  is the native, no-code-of-your-own long-press) listing every sound for the
+  lane, each writing the explicit tab char.
+- Tapping a hit fires a short audio preview and a light `.sensoryFeedback`
+  haptic (a native touch the web app can't do).
+- Cell targets ≥ 44 pt; horizontal scroll for wide grids.
 
----
-
-## 7. Phase 5 — Build, device test, submit
-
-1. **Signing & Capabilities:** select your Team, enable Automatically Manage
-   Signing. No special capabilities required.
-2. Run on a **physical iPad** and iPhone. Verify: offline load, tap-to-cycle,
-   long-press sound menu, playback + metronome + count-in + speed-up, notation
-   updates, PDF share, and that the shareable-URL state persists across an app
-   relaunch (the History API works under the `app://` origin).
-3. **TestFlight:** Archive → Distribute → App Store Connect → TestFlight for
-   yourself and a few students before public release.
-4. **App Store Connect listing:** screenshots (iPhone 6.7" + iPad 12.9"
-   required), description, keywords (drums, groove, notation, metronome,
-   practice), category **Music** (or Education). App Privacy questionnaire:
-   **"Data Not Collected."**
-5. **If rejected under 4.2** (wrapper concern), add native feel and resubmit:
-   - Haptic feedback on cell taps (`UIImpactFeedbackGenerator`) via a second
-     script message handler (`window.webkit.messageHandlers.haptic.postMessage()`).
-   - A native launch/onboarding screen.
-   - Emphasise in review notes that it's an offline creation tool with native
-     audio and PDF export, not a web bookmark.
-
-**Acceptance check:** app runs on your own iPad via TestFlight end-to-end.
+**Acceptance check:** building a basic rock beat by tapping updates the model;
+long-press → "Ride" writes a ride; the whole grid scrolls on iPhone.
 
 ---
 
-## 8. Web-app changes needed (in the Groove Builder repo, not Xcode)
+## 6. Phase 4 — Notation engraver (the big one)
 
-Two small changes make the web app cooperate with the native shell. **I (Claude
-in the web repo) can apply these for you — just ask.** They're harmless in the
-browser (feature-detected, no-ops when there's no native bridge).
+There is no abcjs on iOS, so port the **layout logic** of `grooveToAbc.ts`
+directly into a drawing routine. Split it in two:
 
-1. **PDF export → native bridge** in `src/lib/exportPdf.ts`: when the native
-   handler exists, post the PDF instead of triggering a browser download.
-   ```ts
-   const bridge = (window as any).webkit?.messageHandlers?.exportPdf;
-   if (bridge) {
-     const dataUri = pdf.output('datauristring');      // data:application/pdf;base64,…
-     bridge.postMessage({ filename: safeFilename(title), base64: dataUri.split(',')[1] });
-   } else {
-     pdf.save(safeFilename(title));                     // unchanged web behaviour
-   }
+1. `Engraver.swift` (in GrooveCore) turns a `GrooveData` into an array of
+   positioned primitives — **no UIKit**, just geometry:
+   ```swift
+   enum Glyph { case noteheadBlack, noteheadX, restQuarter, rest8th, rest16th,
+                     percClef, timeSigDigit(Int), augmentationDot }
+   struct Placed { var glyph: Glyph; var x: CGFloat; var staffStep: Int }
+   struct Stem  { var x: CGFloat; var topStep: Int; var bottomStep: Int }
+   struct Beam  { var x1, x2: CGFloat; var step: Int; var thickness: CGFloat }
+   struct TextMark { var s: String; var x: CGFloat; var aboveStaff: Bool } // stickings, tempo
+   struct EngravedLine { var placed: [Placed]; var stems: [Stem]; var beams: [Beam]; var text: [TextMark]; var barlines: [CGFloat] }
+   func engrave(_ g: GrooveData, width: CGFloat) -> [EngravedLine]
    ```
-2. **Safe-area + no-zoom viewport** in `index.html`:
-   ```html
-   <meta name="viewport"
-         content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-   ```
-   and pad the app for the notch/home-indicator in `app.css`:
-   ```css
-   .app { padding-left: max(16px, env(safe-area-inset-left));
-          padding-right: max(16px, env(safe-area-inset-right));
-          padding-bottom: env(safe-area-inset-bottom); }
-   ```
+   Reuse the web app's pitch→staff-position table and rules:
+   - Percussion 5-line staff, percussion clef at the left.
+   - **X noteheads** for hi-hat, ride, crash, stacker, cross-stick, foot splash,
+     metronome; **normal heads** for snare, kick, toms.
+   - Staff positions: Hi-hat above top line; Hi tom = top space; Mid tom = on
+     the 2nd line from the top; Snare = 3rd space; Floor tom = 2nd space from
+     bottom; Kick = 1st space.
+   - **Hands stems up, feet (kick/foot) stems down.**
+   - Look-ahead durations (a hit lasts until the next event), beam groups per
+     beat, `(3` tuplets for triplet divisions, rests on empty beats.
+   - Sticking letters on one baseline above the staff; tempo text top-left; two
+     measures per line; a lone measure centred and enlarged.
 
-After applying these, rebuild (`npm run build`) and re-copy `dist/` → `web/`
-(Phase 3).
+2. `NotationView.swift` draws `EngravedLine`s in a SwiftUI `Canvas`. Use the
+   **Bravura** SMuFL music font (free from Steinberg — bundle `Bravura.otf`) for
+   glyphs (`noteheadBlack` U+E0A4, `noteheadXBlack` U+E0A9,
+   `unpitchedPercussionClef1` U+E069, time-sig digits U+E080–E089, rests
+   U+E4E5–E4E7 — verify against Bravura's `glyphnames.json`). Draw staff lines,
+   stems, beams, and barlines as filled rects/paths. This gives real engraving
+   quality identical in spirit to the web output.
+
+   *(Lighter alternative if you want zero font dependency: draw noteheads as
+   filled ellipses and X-heads as crossed strokes. Serviceable, less polished.)*
+
+**Acceptance check:** a rock beat renders with X-head hi-hats (stems up), snare
+on 2 & 4, kick stems down, correct beaming; a paradiddle shows R L R R … level
+above the notes; a single bar is centred and large.
 
 ---
 
-## 9. Effort & cost summary
+## 7. Phase 5 — Audio engine (AVAudioEngine)
 
-| Item | Effort / cost |
+Port `audio/drumSynth.ts` + `audio/player.ts` to `AudioEngine.swift`.
+
+- **Sounds:** port the procedural DSP into `AVAudioPCMBuffer`s at startup (fill
+  Float channel data with the same kick/snare/hat/cymbal/tom synthesis). No
+  audio assets to license, and it matches the web timbre. *(Or bundle WAVs if
+  you prefer recorded samples.)*
+- **Graph:** `AVAudioEngine` → main mixer → output; a small pool of
+  `AVAudioPlayerNode`s for polyphony, plus a limiter (`AVAudioUnitEffect` /
+  `AVAudioUnitDynamicsProcessor`) on the master.
+- **Scheduling — the native two-clocks pattern:** a timer (~25 ms) schedules
+  every hit landing within the next ~120 ms at a precise `AVAudioTime`
+  (`sampleTime` anchored to the engine's `lastRenderTime`), via
+  `playerNode.scheduleBuffer(buffer, at: time)`. This is the sample-accurate
+  equivalent of the web `AudioContext.currentTime` scheduler. Port the same
+  `secondsPerBeat`, subdivision, and swing math from `timing.ts`.
+- **Features to carry over:** tempo, swing, count-in, auto speed-up per loop,
+  metronome click track, accent/ghost velocities, looping, and the playing-cell
+  highlight (publish the current cell to the view-model).
+- **Session:** `AVAudioSession` `.playback` category so it sounds through the
+  mute switch; resume the engine on a user gesture.
+
+**Acceptance check:** the rock beat plays in time; changing tempo/swing while
+playing takes effect; count-in and metronome work; the grid highlight tracks the
+beat; audio survives backgrounding/interruptions (phone call) gracefully.
+
+---
+
+## 8. Phase 6 — Library, sharing, deep links
+
+- **My Grooves:** port `library.ts` — save the current groove's query string
+  (upsert by name), list newest-first, delete/rename. Store as `Codable` JSON in
+  Application Support (or SwiftData if you prefer). `MyGroovesView.swift` is a
+  `List` with swipe-to-delete.
+- **Share:** a share button → `UIActivityViewController` sharing the groove URL
+  (so the recipient can open it on web or in the app).
+- **Deep links / lesson-app integration:** register a **Universal Link** (or a
+  custom scheme `groovebuilder://`) so tapping a groove URL opens the app to that
+  groove. Implement `onOpenURL` → `URLCodec.parse` → load. This is the native
+  equivalent of the web app's link/embed integration: a lessons platform links
+  to a groove and it opens straight into the app.
+
+**Acceptance check:** save → force-quit → relaunch → the groove is still in My
+Grooves and opens intact; a shared link opens the app to the right groove.
+
+---
+
+## 9. Phase 7 — PDF export (PDFKit)
+
+Reuse the **same `Engraver`** to draw into a PDF context:
+
+```swift
+let data = UIGraphicsPDFRenderer(bounds: a4).pdfData { ctx in
+    ctx.beginPage()
+    NotationRenderer.draw(engrave(groove, width: contentWidth),
+                          in: ctx.cgContext)   // shared draw routine
+}
+```
+
+Because the engraver is UI-independent, on-screen notation and the PDF are
+pixel-identical. Present the resulting file via the share sheet (Save to Files,
+Print, AirDrop, Mail). Filename from the groove title. Single-bar grooves centred
+and enlarged; multi-page for long sheets.
+
+**Acceptance check:** export produces a clean vector PDF (title, tempo, notation)
+with no browser-style headers/footers, saved to Files.
+
+---
+
+## 10. Phase 8 — Polish & App Store
+
+- App icon (1024²), launch screen (dark `#1e2128`), light status bar.
+- Portrait + landscape; iPad multitasking/size-class friendly layout.
+- Haptics on taps; optional Apple Pencil support on the grid (a native perk).
+- **App Store Connect:** category Music (or Education), screenshots (iPhone 6.7"
+  + iPad 12.9"), App Privacy = **Data Not Collected**. Because it's genuinely
+  native, **Guideline 4.2 "wrapper" risk does not apply.**
+
+**Acceptance check:** TestFlight build runs end-to-end on your iPad; submitted
+for review.
+
+---
+
+## 11. Effort, trade-offs, and interop
+
+| | This spec (native) |
 |---|---|
-| Xcode project + Swift shell (Phases 1–4) | ~½–1 day with Claude Code |
-| Icons, launch, listing assets | ~half a day |
-| Apple Developer Program | $99 / year |
-| App Review turnaround | ~1–3 days per submission |
-| Ongoing updates | re-run `npm run build` → copy `dist/` → re-archive |
+| Effort | ~2–4 weeks |
+| Codebases to maintain | Two (web + Swift) — keep `GrooveCore` in sync with `src/lib` |
+| Feel | Fully native (haptics, Pencil, 120 Hz) |
+| App Store 4.2 risk | None |
+| Offline | Yes |
+| Cross-open with web links | Yes — identical URL format is the contract |
 
-No rewrite, no second codebase to maintain — the web app stays the single source
-of truth, and the iOS app is a wrapper you re-bundle on release.
+**Keep them in sync:** the web app's `src/lib` is the reference. When you change
+a rule there (a new sound, a mapping tweak), mirror it in `GrooveCore` and update
+both test suites. The shared URL format is what guarantees a groove made on the
+website opens correctly in the app and vice-versa.
+
+*(For context: a WebView-wrapper version would be ~1 day but isn't truly native.
+This spec is the full-native path you asked for.)*
 
 ---
 
-## 10. File checklist (what Claude Code should end up creating)
+## 12. File checklist
 
-- `GrooveBuilderApp.swift` — app entry + audio session
-- `ContentView.swift` — hosts the web view
-- `WebView.swift` — WKWebView + PDF bridge coordinator
-- `BundleSchemeHandler.swift` — offline file serving
-- `web/` — folder reference containing the built web app (`dist/` contents)
-- `Assets.xcassets/AppIcon` — 1024² icon
-- Launch screen + Info.plist configured per Phase 4
+**GrooveCore:** `GrooveData.swift`, `URLCodec.swift`, `Timing.swift`,
+`Engraver.swift`, `NotationRenderer.swift` (shared Canvas+PDF draw),
+`AudioEngine.swift`, `Library.swift`, + unit tests mirroring the web suite.
+
+**App:** `GrooveBuilderApp.swift`, `EditorView.swift`, `ControlsView.swift`,
+`GridEditorView.swift`, `NotationView.swift`, `MyGroovesView.swift`,
+`ExportPDF.swift`, `Assets.xcassets` (AppIcon, `Bravura.otf`), launch screen,
+Info.plist (Universal Links / URL scheme).
