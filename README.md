@@ -82,9 +82,23 @@ kick: `o` kick, `x` hi-hat foot splash, `X` both.
 - **Auto speed-up** — raise the tempo by +1/+2/+5/+10 BPM every loop (capped
   at 400) for practice ramps; the live BPM shows next to the tempo control.
 
+## Saving & lesson-app integration
+
+- **Save / My Grooves** — the Save button stores the groove (as its canonical
+  URL) in the browser's local storage on that device; the My Grooves panel
+  lists, reopens and deletes them. No account, works offline.
+- **Link integration** — every groove *is* a URL, so pasting the link into any
+  lessons platform (notes, homework, messages) hands the student the full
+  groove.
+- **Embed integration** — the **Embed code** button copies an `<iframe>`
+  snippet. Any lesson page that accepts HTML embeds then shows a compact
+  player: title, tempo, play/stop, the engraved notation, and an
+  "Open in Groove Builder" link. The embed view is the same app loaded with
+  `&Embed=1` appended to a groove URL.
+
 ## Known limitations (vs. full GrooveScribe)
 
 - Ghost notes play quietly but render as plain noteheads (no parentheses).
-- No MIDI export or embed mode (PDF download is built in).
+- No MIDI export (PDF download is built in).
 
 See `groovescribe-clone-prompt.md` for the full build spec this implements.
