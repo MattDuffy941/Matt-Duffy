@@ -155,4 +155,74 @@ final class URLCodecTests: XCTestCase {
             "?TimeSig=4/4&Div=16&Tempo=80&Measures=1&H=|xXo+rbcsmnN-----|&S=|oOgxfdb---------|&K=|oxX-------------|"
         XCTAssertEqual(URLCodec.serialize(URLCodec.parse(url)), url)
     }
+
+    // MARK: Machine-checkable per-cell spec (the interop reference)
+
+    /// Every exotic hit, asserted cell-by-cell. This is the authoritative
+    /// decode of the verification URL — matches the running web codec exactly.
+    func testExoticHitsDecodePerCell() {
+        let g = URLCodec.parse(
+            "?TimeSig=4/4&Div=16&Tempo=80&Measures=1&H=|xXo+rbcsmnN-----|&S=|oOgxfdb---------|&K=|oxX-------------|")
+
+        let expectedHihat: [HihatHit?] = [
+            .normal, .accent, .open, .close, .ride, .rideBell, .crash, .stacker,
+            .cowbell, .metronomeNormal, .metronomeAccent, nil, nil, nil, nil, nil,
+        ]
+        XCTAssertEqual(g.hihat, expectedHihat)
+
+        let expectedSnare: [SnareHit?] = [
+            .normal, .accent, .ghost, .xstick, .flam, .drag, .buzz,
+            nil, nil, nil, nil, nil, nil, nil, nil, nil,
+        ]
+        XCTAssertEqual(g.snare, expectedSnare)
+
+        let expectedKick: [KickHit?] = [
+            .normal, .splash, .kickAndSplash,
+            nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+        ]
+        XCTAssertEqual(g.kick, expectedKick)
+    }
+
+    /// `r`/`R` and `b`/`B` both parse, but serialize emits the lowercase form.
+    func testUppercaseAliasesNormalizeOnSerialize() {
+        let g = URLCodec.parse("?TimeSig=4/4&Div=16&Tempo=80&Measures=1&H=|R-B-------------|")
+        XCTAssertEqual(g.hihat[0], .ride)
+        XCTAssertEqual(g.hihat[2], .rideBell)
+        XCTAssertTrue(URLCodec.serialize(g).contains("H=|r-b-------------|"))
+    }
+
+    /// Toms + stickings, asserted cell-by-cell.
+    func testTomsAndStickingsDecodePerCell() {
+        let g = URLCodec.parse(
+            "?TimeSig=4/4&Div=16&Tempo=80&Measures=1&T1=|o---------------|&T2=|--o-------------|&T3=|----o-----------|&T4=|------o---------|&Stickings=|RLBRLB----------|")
+        XCTAssertEqual(g.toms[0][0], .normal)
+        XCTAssertEqual(g.toms[1][2], .normal)
+        XCTAssertEqual(g.toms[2][4], .normal)
+        XCTAssertEqual(g.toms[3][6], .normal)
+        XCTAssertEqual(Array(g.stickings.prefix(6)), [.R, .L, .B, .R, .L, .B])
+        XCTAssertTrue(g.stickings.dropFirst(6).allSatisfy { $0 == nil })
+    }
+
+    /// Locks the exact parameter order, including the positions of Author,
+    /// Comments, Swing and MetronomeFreq relative to Tempo and Measures.
+    func testCanonicalParameterOrder() {
+        var g = GrooveData()
+        g.tempo = 100
+        g.swing = 30
+        g.measures = 2
+        g.metronomeFreq = 8
+        g.title = "My Beat"
+        g.author = "Matt"
+        g.comments = "Hi"
+        let n = 32 // 4/4 at Div=16 over 2 measures
+        g.hihat = emptyLane(n)
+        g.snare = emptyLane(n)
+        g.kick = emptyLane(n)
+        g.toms = [emptyLane(n), emptyLane(n), emptyLane(n), emptyLane(n)]
+        g.stickings = emptyLane(n)
+
+        let expected =
+            "?TimeSig=4/4&Div=16&Title=My%20Beat&Author=Matt&Comments=Hi&Tempo=100&Swing=30&Measures=2&MetronomeFreq=8&H=|----------------|----------------|&S=|----------------|----------------|&K=|----------------|----------------|"
+        XCTAssertEqual(URLCodec.serialize(g), expected)
+    }
 }
