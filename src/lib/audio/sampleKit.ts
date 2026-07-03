@@ -22,6 +22,30 @@ export interface KitDef {
 const BASE = import.meta.env.BASE_URL;
 
 export const SAMPLE_KITS: Record<string, KitDef> = {
+  acoustic: {
+    id: 'acoustic',
+    label: 'Acoustic (CC0)',
+    base: `${BASE}samples/acoustic/`,
+    files: {
+      kick: 'kick.wav',
+      snare: 'snare.wav',
+      hihatClosed: 'hihatClosed.wav',
+      hihatOpen: 'hihatOpen.wav',
+      hihatFoot: 'hihatFoot.wav',
+      crash: 'crash.wav',
+      tom1: 'tom1.wav',
+      tom2: 'tom2.wav',
+    },
+    aliases: {
+      snareGhost: 'snare',
+      stacker: 'crash',
+      // VCSL provides two toms — the lower one covers low & floor toms
+      tom3: 'tom2',
+      tom4: 'tom2',
+      // ride, rideBell, cowbell, cross-stick and the metronome click fall back
+      // to the synth (VCSL has no dedicated ride/cross-stick).
+    },
+  },
   tr808: {
     id: 'tr808',
     label: 'TR-808 (CC0)',

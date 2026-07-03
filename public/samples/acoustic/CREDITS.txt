@@ -1,0 +1,9 @@
+Acoustic drum samples — Creative Commons Zero (CC0 1.0, public domain).
+Source: Versilian Community Sample Library (VCSL)
+        https://github.com/sgossner/VCSL
+Kick (Bass Drum 1), Snare (Modern 1), Hi-hats (closed/open/foot),
+Crash (Clash Cymbals 1), Toms (Tom 1 & 2). Downmixed to mono.
+No attribution required; included here as a courtesy. Free for any use,
+including commercial, with no royalties or restrictions.
+Ride, ride bell, cowbell, cross-stick and metronome use the app's
+built-in synth (VCSL has no dedicated ride/cross-stick).

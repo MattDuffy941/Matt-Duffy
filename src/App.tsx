@@ -281,15 +281,19 @@ export default function App() {
           </a>
           . Click a cell to cycle common sounds;{' '}
           <strong>right-click or long-press for the full menu</strong> (ride, crash, cross-stick,
-          flams and more). TR-808 sounds are{' '}
+          flams and more). Acoustic (
+          <a href="https://github.com/sgossner/VCSL" target="_blank" rel="noreferrer">
+            VCSL
+          </a>
+          ) and TR-808 (
           <a
             href="https://github.com/tidalcycles/sounds-tr808-fischer"
             target="_blank"
             rel="noreferrer"
           >
-            CC0 public domain
+            tidalcycles
           </a>
-          .
+          ) sample kits are CC0 public domain.
         </p>
       </footer>
     </div>
