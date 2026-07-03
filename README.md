@@ -81,6 +81,14 @@ kick: `o` kick, `x` hi-hat foot splash, `X` both.
 - **Count-in** — one measure of clicks before the groove starts.
 - **Auto speed-up** — raise the tempo by +1/+2/+5/+10 BPM every loop (capped
   at 400) for practice ramps; the live BPM shows next to the tempo control.
+- **Sound kits** — the "Sound" selector switches between the built-in
+  procedural synth (zero-latency default) and sampled kits. Bundled:
+  **TR-808**, sourced from
+  [tidalcycles/sounds-tr808-fischer](https://github.com/tidalcycles/sounds-tr808-fischer)
+  under **CC0 1.0** (public domain — free for any use, no attribution
+  required). Sample kits load lazily and fall back to the synth for any voice
+  they don't provide. To add another kit, drop one-shot WAVs in
+  `public/samples/<id>/` and register it in `src/lib/audio/sampleKit.ts`.
 
 ## Saving & lesson-app integration
 

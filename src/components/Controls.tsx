@@ -1,5 +1,6 @@
 import { ALLOWED_DIVS, GrooveData, isTripletDiv } from '../lib/grooveData';
 import { PRESETS } from '../lib/presets';
+import { KIT_OPTIONS } from '../lib/audio/sampleKit';
 
 const DIV_LABELS: Record<number, string> = {
   8: '8th notes',
@@ -18,6 +19,7 @@ interface Props {
   rampBpm: number;
   showToms: boolean;
   showSticking: boolean;
+  kitName: string;
   onChange: (changes: Partial<GrooveData>) => void;
   onPlayStop: () => void;
   onShare: () => void;
@@ -29,6 +31,7 @@ interface Props {
   onExportPdf: () => void;
   onSave: () => void;
   onCopyEmbed: () => void;
+  onKitChange: (id: string) => void;
 }
 
 export function Controls({
@@ -39,6 +42,7 @@ export function Controls({
   rampBpm,
   showToms,
   showSticking,
+  kitName,
   onChange,
   onPlayStop,
   onShare,
@@ -50,6 +54,7 @@ export function Controls({
   onExportPdf,
   onSave,
   onCopyEmbed,
+  onKitChange,
 }: Props) {
   return (
     <div className="controls">
@@ -182,6 +187,17 @@ export function Controls({
           <option value={4}>quarters</option>
           <option value={8}>8ths</option>
           <option value={16}>16ths</option>
+        </select>
+      </label>
+
+      <label>
+        Sound
+        <select value={kitName} onChange={(e) => onKitChange(e.target.value)}>
+          {KIT_OPTIONS.map((k) => (
+            <option key={k.id} value={k.id}>
+              {k.label}
+            </option>
+          ))}
         </select>
       </label>
 

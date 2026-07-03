@@ -19,6 +19,7 @@
 import { GrooveData, HihatHit, KickHit, SnareHit, totalCells } from '../grooveData';
 import { cellOffsetBeats, loopBeats, metronomeClicksPerMeasure, secondsPerBeat } from '../timing';
 import { DrumKit, SoundName, buildDrumKit } from './drumSynth';
+import { SAMPLE_KITS, loadSampleKit } from './sampleKit';
 
 const LOOKAHEAD_MS = 25;
 const SCHEDULE_AHEAD_S = 0.12;
@@ -103,6 +104,8 @@ const DRAG_GRACE_OFFSET_S = 0.045;
 export class GroovePlayer {
   private ctx: AudioContext | null = null;
   private kit: DrumKit | null = null;
+  private synthKit: DrumKit | null = null;
+  private kitName = 'synth';
   private master: GainNode | null = null;
 
   private groove: GrooveData | null = null;
@@ -129,7 +132,8 @@ export class GroovePlayer {
   private ensureContext(): AudioContext {
     if (!this.ctx) {
       this.ctx = new AudioContext();
-      this.kit = buildDrumKit(this.ctx);
+      this.synthKit = buildDrumKit(this.ctx);
+      this.kit = this.synthKit;
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.9;
       const limiter = this.ctx.createDynamicsCompressor();
@@ -137,9 +141,25 @@ export class GroovePlayer {
       limiter.ratio.value = 12;
       this.master.connect(limiter);
       limiter.connect(this.ctx.destination);
+      if (this.kitName !== 'synth') void this.setKit(this.kitName);
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
     return this.ctx;
+  }
+
+  /**
+   * Switch the drum kit. Synth is instant; sample kits load asynchronously and
+   * swap in when ready (hits before then use the synth fallback).
+   */
+  async setKit(name: string): Promise<void> {
+    this.kitName = name;
+    if (!this.ctx) return; // will load lazily on first sound
+    if (name === 'synth' || !SAMPLE_KITS[name]) {
+      this.kit = this.synthKit;
+      return;
+    }
+    const loaded = await loadSampleKit(this.ctx, SAMPLE_KITS[name], this.synthKit!);
+    if (this.kitName === name) this.kit = loaded; // ignore if switched again mid-load
   }
 
   private playSound(name: SoundName, when: number, gain: number): void {

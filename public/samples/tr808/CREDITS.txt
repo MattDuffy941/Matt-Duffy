@@ -1,0 +1,4 @@
+TR-808 drum samples — Creative Commons Zero (CC0 1.0, public domain).
+Source: https://github.com/tidalcycles/sounds-tr808-fischer
+No attribution required; included here as a courtesy. Free for any use,
+including commercial, with no royalties or restrictions.

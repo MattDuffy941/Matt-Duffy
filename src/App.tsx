@@ -66,6 +66,7 @@ export default function App() {
   const [showToms, setShowToms] = useState(() => groove.toms.some((l) => laneHasHits(l)));
   const [showSticking, setShowSticking] = useState(() => laneHasHits(groove.stickings));
   const [saved, setSaved] = useState<SavedGroove[]>(() => listGrooves());
+  const [kitName, setKitName] = useState('synth');
   const playerRef = useRef<GroovePlayer | null>(null);
 
   const getPlayer = useCallback((): GroovePlayer => {
@@ -191,6 +192,14 @@ export default function App() {
     setSaved(listGrooves());
   }, []);
 
+  const handleKitChange = useCallback(
+    (id: string) => {
+      setKitName(id);
+      void getPlayer().setKit(id);
+    },
+    [getPlayer],
+  );
+
   const handleCopyEmbed = useCallback(() => {
     const url =
       window.location.origin + window.location.pathname + toUrl(groove) + '&Embed=1';
@@ -240,6 +249,7 @@ export default function App() {
         rampBpm={rampBpm}
         showToms={showToms}
         showSticking={showSticking}
+        kitName={kitName}
         onChange={handleChange}
         onPlayStop={handlePlayStop}
         onShare={handleShare}
@@ -251,6 +261,7 @@ export default function App() {
         onExportPdf={handleExportPdf}
         onSave={handleSave}
         onCopyEmbed={handleCopyEmbed}
+        onKitChange={handleKitChange}
       />
       <SavedGrooves grooves={saved} onLoad={handleLoadQuery} onDelete={handleDeleteSaved} />
       <GridEditor
@@ -270,7 +281,15 @@ export default function App() {
           </a>
           . Click a cell to cycle common sounds;{' '}
           <strong>right-click or long-press for the full menu</strong> (ride, crash, cross-stick,
-          flams and more).
+          flams and more). TR-808 sounds are{' '}
+          <a
+            href="https://github.com/tidalcycles/sounds-tr808-fischer"
+            target="_blank"
+            rel="noreferrer"
+          >
+            CC0 public domain
+          </a>
+          .
         </p>
       </footer>
     </div>
