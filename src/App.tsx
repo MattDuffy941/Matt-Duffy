@@ -17,6 +17,7 @@ import {
 } from './lib/grooveData';
 import { grooveToAbc } from './lib/grooveToAbc';
 import { exportPdf } from './lib/exportPdf';
+import { downloadBlob, recordWebM } from './lib/video/recordVideo';
 import { SavedGroove, deleteGroove, listGrooves, saveGroove } from './lib/library';
 import { EmbedView } from './components/EmbedView';
 import { SavedGrooves } from './components/SavedGrooves';
@@ -67,6 +68,8 @@ export default function App() {
   const [showSticking, setShowSticking] = useState(() => laneHasHits(groove.stickings));
   const [saved, setSaved] = useState<SavedGroove[]>(() => listGrooves());
   const [kitName, setKitName] = useState('synth');
+  const [recording, setRecording] = useState(false);
+  const [recStatus, setRecStatus] = useState('');
   const playerRef = useRef<GroovePlayer | null>(null);
 
   const getPlayer = useCallback((): GroovePlayer => {
@@ -200,6 +203,47 @@ export default function App() {
     [getPlayer],
   );
 
+  const handleRecord = useCallback(
+    async (format: 'webm' | 'mp4', loops: number) => {
+      const notationEl = document.querySelector<HTMLElement>('.notation');
+      if (!notationEl || recording) return;
+      const player = getPlayer();
+      const base = (groove.title || 'groove').replace(/[^\w\- ]+/g, '').trim() || 'groove';
+      setRecording(true);
+      try {
+        setRecStatus('Recording… play-along in real time');
+        const webm = await recordWebM({
+          player,
+          groove,
+          notationEl,
+          loops,
+          onProgress: (f) => setRecStatus(`Recording… ${Math.round(f * 100)}%`),
+        });
+        if (format === 'mp4') {
+          setRecStatus('Converting to MP4… (first time downloads the encoder)');
+          const { transcodeToMp4 } = await import('./lib/video/toMp4');
+          const mp4 = await transcodeToMp4(webm, (f) =>
+            setRecStatus(`Converting to MP4… ${Math.round(f * 100)}%`),
+          );
+          downloadBlob(mp4, `${base}.mp4`);
+        } else {
+          downloadBlob(webm, `${base}.webm`);
+        }
+      } catch (err) {
+        setRecStatus('');
+        window.alert(
+          `Video recording failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      } finally {
+        setRecording(false);
+        setRecStatus('');
+        setPlaying(false);
+        setCurrentCell(-1);
+      }
+    },
+    [groove, recording, getPlayer],
+  );
+
   const handleCopyEmbed = useCallback(() => {
     const url =
       window.location.origin + window.location.pathname + toUrl(groove) + '&Embed=1';
@@ -262,7 +306,10 @@ export default function App() {
         onSave={handleSave}
         onCopyEmbed={handleCopyEmbed}
         onKitChange={handleKitChange}
+        recording={recording}
+        onRecord={handleRecord}
       />
+      {recStatus && <div className="rec-status">🔴 {recStatus}</div>}
       <SavedGrooves grooves={saved} onLoad={handleLoadQuery} onDelete={handleDeleteSaved} />
       <GridEditor
         groove={groove}

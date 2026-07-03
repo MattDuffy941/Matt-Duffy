@@ -11,6 +11,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "abcjs": "^6.4.4",
     "jspdf": "^4.2.1",
     "react": "^18.3.1",

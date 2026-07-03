@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { ALLOWED_DIVS, GrooveData, isTripletDiv } from '../lib/grooveData';
 import { PRESETS } from '../lib/presets';
 import { KIT_OPTIONS } from '../lib/audio/sampleKit';
+import { videoRecordingSupported } from '../lib/video/recordVideo';
 
 const DIV_LABELS: Record<number, string> = {
   8: '8th notes',
@@ -32,6 +34,8 @@ interface Props {
   onSave: () => void;
   onCopyEmbed: () => void;
   onKitChange: (id: string) => void;
+  recording: boolean;
+  onRecord: (format: 'webm' | 'mp4', loops: number) => void;
 }
 
 export function Controls({
@@ -55,7 +59,13 @@ export function Controls({
   onSave,
   onCopyEmbed,
   onKitChange,
+  recording,
+  onRecord,
 }: Props) {
+  const [videoFormat, setVideoFormat] = useState<'webm' | 'mp4'>('webm');
+  const [videoLoops, setVideoLoops] = useState(2);
+  const canRecord = videoRecordingSupported();
+
   return (
     <div className="controls">
       <button className={playing ? 'play stop' : 'play'} onClick={onPlayStop}>
@@ -256,6 +266,37 @@ export function Controls({
       >
         Embed code
       </button>
+
+      {canRecord && (
+        <label title="Record a play-along video with a marker moving in time">
+          Video
+          <select
+            value={videoLoops}
+            disabled={recording}
+            onChange={(e) => setVideoLoops(Number(e.target.value))}
+          >
+            <option value={1}>1 loop</option>
+            <option value={2}>2 loops</option>
+            <option value={4}>4 loops</option>
+            <option value={8}>8 loops</option>
+          </select>
+          <select
+            value={videoFormat}
+            disabled={recording}
+            onChange={(e) => setVideoFormat(e.target.value as 'webm' | 'mp4')}
+          >
+            <option value="webm">WebM</option>
+            <option value="mp4">MP4</option>
+          </select>
+          <button
+            className="toms-toggle"
+            disabled={recording}
+            onClick={() => onRecord(videoFormat, videoLoops)}
+          >
+            {recording ? 'Recording…' : '● Record'}
+          </button>
+        </label>
+      )}
     </div>
   );
 }

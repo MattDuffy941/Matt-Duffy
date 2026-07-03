@@ -107,6 +107,7 @@ export class GroovePlayer {
   private synthKit: DrumKit | null = null;
   private kitName = 'synth';
   private master: GainNode | null = null;
+  private recDest: MediaStreamAudioDestinationNode | null = null;
 
   private groove: GrooveData | null = null;
   private timerId: ReturnType<typeof setInterval> | null = null;
@@ -160,6 +161,30 @@ export class GroovePlayer {
     }
     const loaded = await loadSampleKit(this.ctx, SAMPLE_KITS[name], this.synthKit!);
     if (this.kitName === name) this.kit = loaded; // ignore if switched again mid-load
+  }
+
+  /** A MediaStream carrying the master output — used for video recording. */
+  getAudioStream(): MediaStream {
+    const ctx = this.ensureContext();
+    if (!this.recDest) {
+      this.recDest = ctx.createMediaStreamDestination();
+      this.master!.connect(this.recDest);
+    }
+    return this.recDest.stream;
+  }
+
+  /** Progress through the current loop, 0..1 — drives the video marker. */
+  loopProgress(): number {
+    if (!this.ctx || !this.groove) return 0;
+    const dur = this.loopDurationSeconds();
+    if (dur <= 0) return 0;
+    return Math.max(0, Math.min(1, (this.ctx.currentTime - this.loopStartTime) / dur));
+  }
+
+  /** Duration of one loop in seconds (at the groove's base tempo). */
+  loopDurationSeconds(): number {
+    if (!this.groove) return 0;
+    return loopBeats(this.groove) * secondsPerBeat(this.groove.tempo);
   }
 
   private playSound(name: SoundName, when: number, gain: number): void {

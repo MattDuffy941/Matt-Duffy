@@ -96,6 +96,13 @@ kick: `o` kick, `x` hi-hat foot splash, `X` both.
   provide (e.g. the acoustic kit's ride/cross-stick). To add a kit, drop
   one-shot WAVs in `public/samples/<id>/` and register it in
   `src/lib/audio/sampleKit.ts`.
+- **Play-along video** — the Video control records the notation with a marker
+  sweeping in time with the metronome, plus the drum/click audio, into a
+  downloadable file. **WebM** is recorded natively (`MediaRecorder` +
+  `canvas.captureStream`, synced to the audio clock); **MP4** is produced by
+  transcoding that WebM with `ffmpeg.wasm` (lazy-loaded H.264/AAC, so WebM
+  users don't download the encoder). Recording is real time and works on
+  desktop Chrome/Edge/Firefox; `MediaRecorder` is unreliable on Safari/iOS.
 
 ## Saving & lesson-app integration
 

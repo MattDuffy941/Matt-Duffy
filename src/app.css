@@ -232,6 +232,17 @@ button.share:active {
   filter: brightness(1.25);
 }
 
+.rec-status {
+  background: #3a2020;
+  border: 1px solid #7a3a3a;
+  color: #ffd0d0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* My Grooves library */
 .saved-grooves {
   background: var(--panel);
