@@ -447,11 +447,23 @@ provider-name substring match on `"school"`. Neither can succeed:
 There is also a Playwright test (`schools-badge-pending-state.spec.ts`) and an
 admin config endpoint devoted to this feature.
 
-**Check what `AMELIA_SCHOOLS_PROVIDER_ID` is actually set to.** If it is `1`,
-the badge is actively wrong on the admin schedule today. Either way, schools
-detection should key on **service ID** (46, 47, 48) or category 14, not
-provider — and the rebuild should note that in-school lessons never appear in
-Amelia regardless.
+**CONFIRMED (28 July 2026): `AMELIA_SCHOOLS_PROVIDER_ID = 1`.**
+
+Provider 1 is Matt. `detectIsSchools()` returns `providerId === 1`, so **every
+lesson Matt teaches is flagged `isSchools: true`** — private studio lessons
+included, since he teaches both. The "Schools" badge on the admin schedule is
+therefore wrong on every one of his lessons, today, in production.
+
+**Immediate fix:** unset `AMELIA_SCHOOLS_PROVIDER_ID`. The name-based fallback
+looks for "school" in a provider's name, matches nothing, and the badge
+correctly stops appearing — which is the right outcome, because in-school
+lessons are not in Amelia at all.
+
+**Rebuild:** key schools detection on **service ID** (46, 47, 48) or category
+14, not provider. And note that with zero appointments ever recorded against
+those services, the badge should be expected never to fire until in-school
+lessons are actually booked through Amelia. The feature may not be worth
+rebuilding at all.
 
 ### 11.3c Sibling disambiguation — revised again
 
