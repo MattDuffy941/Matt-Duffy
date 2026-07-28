@@ -98,27 +98,97 @@ concrete bug it fixes.
 
 ---
 
-## 4. Security items to verify against the live app
+## 4. Security — verified against the handlers
 
-These come from the route table, which lists auth middleware but not in-handler
-checks. **Each needs confirming against the actual handler before being treated
-as real** — but each would be serious if the table reflects reality.
+Handler-level answers received 28 July 2026. Recalibrated below.
 
-| Route | Listed auth | Concern |
+### 4.1 Unauthenticated object storage — real, in production
+
+Confirmed by reading `server/replit_integrations/object_storage/routes.ts`.
+The file's own comments acknowledge it is example code where auth and ACL were
+meant to be added and never were.
+
+**`POST /api/uploads/request-url`** issues a presigned GCS upload URL with:
+
+- no authentication
+- no file-size limit (`size` is echoed back, not validated)
+- no content-type restriction
+- no rate limiting
+
+`enforceSameOrigin` does apply, but it only requires `Origin`/`Referer` to match
+`Host` — which any scripted client sets trivially. It is not a meaningful
+barrier to a non-browser caller. Treat the endpoint as anonymous write access to
+a bucket currently holding 412 MB of student material.
+
+**`GET /objects/{*objectPath}`** streams any object whose path resolves, with no
+ACL, no expiry and no ownership check. Security rests entirely on UUID paths
+being unguessable.
+
+**The two compose into a plausible stored-XSS chain**, which is why this is the
+priority item rather than merely a storage-abuse concern:
+
+1. An anonymous caller obtains an upload URL and uploads HTML with a
+   `text/html` content type (nothing validates it).
+2. The same origin serves it back via `GET /objects/<path>`.
+3. `helmet` is configured with `contentSecurityPolicy: false`, so no CSP
+   intervenes.
+4. Script executing on the hub's own origin can issue authenticated `fetch`
+   calls — session cookies ride along, and `enforceSameOrigin` passes because
+   the origin genuinely matches.
+
+Session cookies are `httpOnly`, so the cookie itself cannot be read, but that
+does not prevent same-origin authenticated requests being made on an admin's
+behalf if an admin can be induced to open the URL.
+
+*Unverified:* whether the upload response exposes the resulting object path
+directly, and whether GCS preserves an attacker-supplied content type through to
+the streaming handler. Both are likely; both should be checked before judging
+severity final.
+
+**Remediation** (small, worth doing on the live app rather than waiting for the
+rebuild): require authentication on `request-url`; validate size and
+content-type against an allowlist; rate-limit it; serve downloads through
+short-lived signed URLs with an ownership check instead of a permanent public
+path.
+
+### 4.2 Dev routes — gated, but the gate's value depends on one unknown
+
+`GET /api/dev/students` and `POST /api/dev/link-student` sit inside
+`if (process.env.NODE_ENV !== "production")` and are **not registered in the
+deployed app**. Downgraded accordingly.
+
+The routes themselves are as bad as feared — `isAuthenticated` only, no admin
+check, no ownership check, no validation that `studentId` belongs to the caller.
+Any logged-in user can enumerate every student ID and link themselves to any of
+them, gaining that student's lessons, attachments, bookings and iCal feed.
+
+They are live in the Replit dev workspace, whose URL is publicly reachable while
+the workspace runs.
+
+**Open question that decides whether this matters:** does the dev workspace use
+the same `DATABASE_URL` as the deployed app? On Replit a single Postgres
+instance shared between workspace and deployment is the common default. If it is
+shared, the production database is reachable through a publicly-addressable dev
+URL by anyone who registers an account. If it is separate, this is a non-issue
+in practice.
+
+### 4.3 Lower-priority items (unchanged)
+
+| Route | Auth | Concern |
 |---|---|---|
-| `POST /api/dev/link-student` | `isAuthenticated` | If this links the calling user to an arbitrary student ID, any registered account can attach itself to any student's records. Highest-priority check. |
-| `POST /api/uploads/request-url` | **none** | Unauthenticated presigned-upload issuance would let anyone write into a bucket currently holding 412 MB of student material. |
-| `GET /objects/{*objectPath}` | **none** | Object read by path. `objectAcl.ts` exists, so ACL may be enforced inside the handler — needs checking. |
-| `GET /api/dev/students` | `isAuthenticated` | Student list (PII) exposed to any logged-in account, not just admins. |
 | `POST /api/register-student` | none, **no rate limiter** | A second registration path alongside `/api/public/register`, which *does* have `publicSignupLimiter`. |
-| `GET /api/lessons/:lessonId/grooves` | `isAuthenticated` | No `requireVerifiedStudent`, no visible ownership check. Low impact today (2 grooves exist). |
+| `GET /api/lessons/:lessonId/grooves` | `isAuthenticated` | No `requireVerifiedStudent`, no visible ownership check. Negligible impact today (2 grooves exist). |
 
-Replit's own assessment corroborates the storage ones: *"object_storage/routes.ts
-contains TODOs for adding authentication middleware and ACL checks for protected
-uploads."*
+### 4.4 For the rebuild
 
-The `/api/dev/*` routes look like development scaffolding that shipped to
-production. They should not exist in the rebuild.
+- Object storage behind authentication, with size and content-type validation,
+  rate limiting, and signed time-limited download URLs carrying an ownership
+  check.
+- No `/api/dev/*` routes at all. If equivalent tooling is needed, it requires an
+  admin check *in addition to* the environment gate — an env var is a
+  configuration value, not a security boundary.
+- Separate databases for development and production, unconditionally.
+- Turn `contentSecurityPolicy` back on.
 
 ---
 
