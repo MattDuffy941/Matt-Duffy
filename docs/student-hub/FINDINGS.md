@@ -454,16 +454,22 @@ lesson Matt teaches is flagged `isSchools: true`** — private studio lessons
 included, since he teaches both. The "Schools" badge on the admin schedule is
 therefore wrong on every one of his lessons, today, in production.
 
-**Immediate fix:** unset `AMELIA_SCHOOLS_PROVIDER_ID`. The name-based fallback
-looks for "school" in a provider's name, matches nothing, and the badge
-correctly stops appearing — which is the right outcome, because in-school
-lessons are not in Amelia at all.
+**The feature is being kept** — school lessons will be booked through Amelia
+from now on, so the badge needs to work, not just stop being wrong.
 
-**Rebuild:** key schools detection on **service ID** (46, 47, 48) or category
-14, not provider. And note that with zero appointments ever recorded against
-those services, the badge should be expected never to fire until in-school
-lessons are actually booked through Amelia. The feature may not be worth
-rebuilding at all.
+**Correct detection is by service, not provider.** The school services are
+46 (WKGGS), 47 (Calday 30-min) and 48 (Calday 15-min), all under category 14
+("Schools"), and all taught by provider 1. Provider is the wrong key precisely
+because Matt teaches both school and studio lessons; service is unambiguous.
+
+**Live app fix:** replace the provider match with a service-ID match against a
+new `AMELIA_SCHOOLS_SERVICE_IDS` (`46,47,48`), and unset
+`AMELIA_SCHOOLS_PROVIDER_ID`. Small, contained change to `detectIsSchools()`.
+
+**Rebuild:** same logic, but driven from the mirrored `appointments.service_id`
+with category 14 as a fallback, so adding a fourth school service is a data
+change rather than a config change. Note the existing Playwright coverage
+(`schools-badge-pending-state.spec.ts`) should port across.
 
 ### 11.3c Sibling disambiguation — revised again
 
