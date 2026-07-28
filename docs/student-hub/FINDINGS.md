@@ -387,33 +387,90 @@ Past lesson *notes* are safe. What Amelia cannot provide is historical
 If historical booking data matters, it has to come from an Acuity export.
 Worth deciding before the rebuild rather than during it.
 
-### 11.3 Response shape: a contradiction to resolve before building
+### 11.3 RESOLVED — there are two different Amelia APIs
 
-The investigation reports `data.appointments` as **an object keyed by date**,
-requiring key traversal rather than list iteration.
+The apparent contradiction was real, and the explanation is bigger than a shape
+difference. **The portal and the investigation were talking to entirely
+different API surfaces.**
 
-The production code assumes an array:
+| | Current portal (`server/amelia.ts`) | Documented in `AMELIA-API-SPEC.md` |
+|---|---|---|
+| Base path | `/wp-json/amelia/v1` (WP REST) | `/wp-admin/admin-ajax.php?action=wpamelia_api&call=/api/v1` |
+| Auth header | `Amelia-Api-Key` | `Amelia` |
+| Page size param | `itemsPerPage` | `limit` |
+| Date params | `dates[0]` / `dates[1]` | `dates=YYYY-MM-DD,YYYY-MM-DD` |
+| `appointments` shape | array | object keyed by date |
 
-```ts
-interface AmeliaListResponse { data: { appointments: AmeliaRawAppointment[]; ... } }
-// ...
-all.push(...appointments);
-```
+Four independent differences. These are not two views of one endpoint.
 
-Spreading a plain object into `push()` throws `TypeError: not iterable`. Since
-the bookings page demonstrably works in production, these cannot both describe
-the same response.
+Corroborating evidence from the portal's own code: `validateSchoolsProvider()`
+contains a dedicated fallback for `/users/providers` returning **404**,
+commented *"Providers list endpoint not registered in this Amelia version"*. The
+spec shows `/users/providers` working fine — on the admin-ajax route. The WP
+REST route simply doesn't expose it. The portal has been silently falling back
+for its entire life.
 
-The likely explanation: the investigation used a **cookie-authenticated
-endpoint variant** (`call=/appointments`) rather than the keyed REST route
-(`/wp-json/amelia/v1/appointments`) the app uses, and the two shapes differ
-despite appearing equivalent. An alternative is that the shape varies with the
-presence of date filters.
+**Consequences for the rebuild:**
 
-**Must be resolved before any client code is written** — it is the difference
-between an iteration bug on day one and not. Cheapest resolution: one keyed
-request to the real endpoint with the same parameters the app sends, and look at
-the raw JSON.
+1. Build against the **admin-ajax `/api/v1` route**. It is the surface that is
+   documented in depth, exposes `/users/providers`, `/services`, `/coupons`,
+   `/fields` and `/settings`, and supports `customerId` filtering — which the
+   caching and per-student fetch designs both depend on.
+2. **Verify keyed auth on that route first.** The investigation authenticated
+   with an admin session cookie, not the API key. `Amelia: <key>` is Amelia's
+   documented mechanism but was not exercised. If the key does not work there,
+   the whole plan needs revisiting — so this is the first thing to test, before
+   any code.
+3. Do **not** port `server/amelia.ts`'s fetch layer. Its parameter names and
+   array assumption belong to the other API. The parts worth keeping —
+   `ameliaDatetimeToISO()`, `getLondonOffsetMinutes()` — are pure functions with
+   no coupling to either surface.
+
+### 11.3b The schools badge cannot be working
+
+Two facts from the spec combine badly with the portal's implementation:
+
+- There is **no schools provider**. The eight providers are Matt, Gary, Robyn,
+  Anna, Paul, Tess, Tom and Chris. None has "school" in the name.
+- The school services (46, 47, 48) have **zero appointments**. In-school lessons
+  are not recorded in Amelia at all.
+
+`detectIsSchools()` matches on `AMELIA_SCHOOLS_PROVIDER_ID`, falling back to a
+provider-name substring match on `"school"`. Neither can succeed:
+
+- If the env var points at a provider that no longer exists, the startup
+  warning fires and the badge never shows.
+- If it points at provider 1 (Matt), **every one of Matt's lessons is badged as
+  schools** — including private ones, since Matt teaches both.
+- The name fallback matches nothing.
+
+There is also a Playwright test (`schools-badge-pending-state.spec.ts`) and an
+admin config endpoint devoted to this feature.
+
+**Check what `AMELIA_SCHOOLS_PROVIDER_ID` is actually set to.** If it is `1`,
+the badge is actively wrong on the admin schedule today. Either way, schools
+detection should key on **service ID** (46, 47, 48) or category 14, not
+provider — and the rebuild should note that in-school lessons never appear in
+Amelia regardless.
+
+### 11.3c Sibling disambiguation — revised again
+
+§3 proposed checking `bookings[n].info` as the automated route. The spec makes
+that unattractive: `info` is populated on **23 of 1,217 bookings** (~2%). It
+captures what a customer typed into the booking form, not a reliable per-child
+identity.
+
+The better answer is sitting unused in the config. **Custom field 4 is literally
+"Student Name (If different to booking name?)"** — and it is attached to zero
+services, so it has never rendered or captured anything (§11.7).
+
+Attaching field 4 to the lesson services would solve sibling attribution for all
+future bookings, natively, with no heuristics: the parent types the child's name
+at booking time and it arrives on `booking.customFields`. Existing bookings
+still need manual attribution, but there are few affected families.
+
+That makes the recommendation: **attach custom field 4 to the lesson services
+now**, and treat manual attribution as the backfill for what is already booked.
 
 ### 11.4 Confirmed data facts
 
@@ -466,15 +523,40 @@ probably cleaner given the portal already owns lesson records.
 
 ## 12. Still outstanding
 
-1. **The response-shape contradiction in §11.3.** Blocks client code.
-2. **`bookings[n].info` contents** — decides whether sibling disambiguation
-   (§3) can be automated.
-3. **Available webhook trigger types** in this Amelia version — decides whether
-   booking-added and rescheduled events can be subscribed to, or only
-   `bookingStatusUpdated`.
-4. **Booking-form URL parameters** for the prefilled reschedule deep link.
-5. **Whether the Replit dev workspace shares `DATABASE_URL` with production**
+Resolved since the last revision: response shape (§11.3), sibling
+disambiguation route (§11.3c), webhook trigger types (all six are available —
+`bookingAdded`, `bookingApproved`, `bookingCanceled`, `bookingRejected`,
+`bookingRescheduled`, `bookingStatusUpdated`), and booking-form deep links
+(verified — `ameliaServiceId`, `ameliaEmployeeId`, `ameliaCategoryId` on
+`/book-a-lesson/`; no customer prefill, use the Customer Panel at `/bookings`).
+
+Still open:
+
+1. **Does the API key authenticate against the admin-ajax route?** Gates the
+   entire data layer. Test before writing client code.
+2. **What is `AMELIA_SCHOOLS_PROVIDER_ID` set to?** If `1`, the schools badge is
+   actively mislabelling Matt's private lessons today (§11.3b).
+3. **Does the Replit dev workspace share `DATABASE_URL` with production?**
    (§4.2).
-6. **Write-side API behaviour** — the investigation covered GETs only. If the
-   portal is to create or reschedule bookings, `/bookings` and `/stash` are
-   untested.
+4. **Write-side API behaviour** — the investigation covered GETs only. If the
+   portal is ever to create or reschedule bookings, `/bookings` and `/stash`
+   are untested. Not needed for the initial rebuild, which links out to the
+   booking form instead.
+
+### Operational fixes worth making regardless of the rebuild
+
+In rough order of value per minute spent:
+
+1. **Add `https://` to the Hub Integration webhook URL** (§11.1). Activates
+   built-and-tested functionality that has never run.
+2. **Check the 60-minute drum availability gap** — nothing bookable with Matt
+   until January 2027 (spec §15.6). Possibly costing bookings right now.
+3. **Attach custom field 4 ("Student Name if different to booking name") to the
+   lesson services** (§11.3c). Fixes sibling attribution for all future
+   bookings.
+4. **Fix service 48's duration** — named "15 Minute", configured as 30 minutes
+   (spec §8).
+5. **Hide service 21 (`Test Service`) and category 1 (`Default`)**, both
+   currently visible in the public booking form.
+6. **Attach or delete custom fields 5, 6 and 7** — two are marked required and
+   none has ever rendered.
