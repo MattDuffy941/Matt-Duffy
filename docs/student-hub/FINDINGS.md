@@ -48,28 +48,27 @@ The raw type declares `bookings: AmeliaRawBooking[]` — an array, because an
 Amelia appointment can hold several participant bookings. Customer name, email,
 phone **and price** are all read from index 0 only.
 
-Consequences, in order of severity:
+**Severity: latent, not live.** The Amelia investigation (28 July) found the
+install currently produces **one real booking per appointment**. The single
+multi-booking appointment observed turned out to be a waiting-list entry
+(`status: "waiting"`) — and `fetchAllAmeliaAppointments()` already filters
+`waiting` out before normalising.
 
-1. **A student who is the 2nd+ booking on an appointment never sees that lesson
-   in their portal.** `filterAppointmentsForStudent()` matches on the single
-   normalised email, so everyone but the first participant is invisible.
-2. **`/api/admin/weekly-income` undercounts.** Income is summed from the
-   normalised `price`, which is booking[0]'s price alone. A group session of six
-   reports the revenue of one.
-3. The iCal feed inherits both faults, since it is built from the same
-   normalised objects.
+Two corrections to an earlier draft of this document, which overstated the
+impact:
 
-This matters most for schools work — the codebase has a dedicated `isSchools`
-flag and a schools provider ID, and school sessions are the likeliest place for
-multi-participant appointments.
+- `/api/admin/weekly-income` is **not** currently undercounting. With one
+  booking per appointment, `bookings[0].price` is the whole price.
+- No student is currently invisible in their own portal for this reason.
 
-**Still to confirm:** whether multi-booking appointments actually exist in this
-Amelia install. That is question 2a/2b of the outstanding Amelia investigation.
-If they do, this is a live bug affecting real students today, not just a rebuild
-consideration.
+The bug is real but dormant. It activates the moment a genuine group or schools
+session is booked through Amelia, and it fails silently when it does — the
+2nd+ participant simply never sees the lesson, and the income figure quietly
+drops.
 
-**Rebuild fix:** model *bookings*, not appointments — one row per participant,
-keyed `(appointmentId, bookingId)`.
+**Rebuild fix (still worth doing):** model *bookings*, not appointments — one
+row per participant, keyed `(appointmentId, bookingId)`. This costs little now
+and removes a trap later.
 
 ---
 
@@ -92,9 +91,35 @@ practice (which key on `studentId`) but not for bookings.
 
 Scale: 1 user currently has multiple profiles, so this is live but contained.
 
-**Rebuild fix:** link students to Amelia by **customer ID**, not by email
-matching. This is exactly the improvement already on the list, and this is the
-concrete bug it fixes.
+### Correction: customer ID does not fix this
+
+An earlier draft proposed linking students to Amelia by customer ID instead of
+by email. The Amelia investigation shows that **does not solve the problem**.
+
+Customer identity in Amelia is 1:1 with email — 105 distinct emails, none
+mapping to more than one customer ID. So a parent booking for two children under
+one email produces **one Amelia customer for both**. Swapping email matching for
+customer-ID matching changes the key but not the ambiguity: both children still
+resolve to the same customer, and both still see each other's lessons.
+
+Customer ID is still worth storing — it is stable and unambiguous where one
+customer means one student, which is the overwhelming majority of cases. But
+disambiguating siblings needs something else. Options, roughly in order of
+attractiveness:
+
+1. **`bookings[n].info`** — Amelia's per-booking customer info field, which is
+   where "booking for someone else" details land. Needs checking against real
+   data to see whether it is populated and what it contains.
+2. **Service or time slot** — if the two children reliably take different
+   services or slots, the appointment can be attributed on that basis. Fragile.
+3. **Custom fields** — currently useless (see §12.4), but could be made to work
+   if a "student name" field were attached to the lesson services.
+4. **Manual attribution** — the admin assigns ambiguous appointments to a
+   profile. Always correct, costs a few clicks, and only needed for the handful
+   of shared-email families.
+
+For one affected family today, option 4 is defensible. Option 1 is the one to
+investigate first, since it would generalise.
 
 ---
 
@@ -325,17 +350,131 @@ correctness onto a 3000-line route file is the expensive version of this.
 
 ---
 
-## 11. Still outstanding
+## 11. Amelia investigation results (28 July 2026)
 
-The Amelia-side investigation has not come back yet. Open questions that change
-the design:
+Findings from a separate direct-API investigation of the live Amelia install.
 
-1. **Do multi-booking appointments exist in this install?** Decides whether §2 is
-   a live bug or only a rebuild concern.
-2. **Is there a stable Amelia customer ID on the appointment payload?** Required
-   for §3's fix.
-3. **Does the API support date-range and per-customer filtering, and does it
-   return ETag/Last-Modified?** Determines how sharp the §6 caching can be.
-4. **Which webhook trigger types does this Amelia version expose?** Decides
-   whether booking-added and rescheduled events are available.
-5. **Booking-form URL parameters** for the prefilled reschedule deep link.
+### 11.1 The webhook to the portal is misconfigured and has never fired
+
+The "Hub Integration" webhook in Amelia points at
+`hub.wirralmusicfactory.com/...` — **with no `https:// scheme`**, while the two
+other configured webhooks have it. It fires on `bookingStatusUpdated` and
+targets the portal.
+
+This is almost certainly why `appointment_statuses` has **0 rows** (§1). Two
+independent investigations converged: the hub's write-back path is dead both
+because lessons carry no Amelia ID *and* because the webhook never arrives in the
+first place.
+
+**This is the highest-value quick fix available.** Adding the scheme is a
+one-field edit in Amelia's settings and would activate real-time cancellation
+sync that has been built, tested and inert since it was written.
+
+### 11.2 Amelia holds no lesson history before 20 July 2026
+
+The Acuity → Amelia migration date. Amelia is the **forward book only** — zero
+appointments exist before it.
+
+This is less alarming than it first appears, because the portal already stores
+lesson records in its own `lessons` table (205 rows, sourced via Notion/n8n).
+Past lesson *notes* are safe. What Amelia cannot provide is historical
+*booking* data, which constrains:
+
+- attendance history before July 2026
+- `/api/admin/weekly-income` for any prior period
+- any longitudinal reporting built on booking records
+
+If historical booking data matters, it has to come from an Acuity export.
+Worth deciding before the rebuild rather than during it.
+
+### 11.3 Response shape: a contradiction to resolve before building
+
+The investigation reports `data.appointments` as **an object keyed by date**,
+requiring key traversal rather than list iteration.
+
+The production code assumes an array:
+
+```ts
+interface AmeliaListResponse { data: { appointments: AmeliaRawAppointment[]; ... } }
+// ...
+all.push(...appointments);
+```
+
+Spreading a plain object into `push()` throws `TypeError: not iterable`. Since
+the bookings page demonstrably works in production, these cannot both describe
+the same response.
+
+The likely explanation: the investigation used a **cookie-authenticated
+endpoint variant** (`call=/appointments`) rather than the keyed REST route
+(`/wp-json/amelia/v1/appointments`) the app uses, and the two shapes differ
+despite appearing equivalent. An alternative is that the shape varies with the
+presence of date filters.
+
+**Must be resolved before any client code is written** — it is the difference
+between an iteration bug on day one and not. Cheapest resolution: one keyed
+request to the real endpoint with the same parameters the app sends, and look at
+the raw JSON.
+
+### 11.4 Confirmed data facts
+
+- **`bookings` is always an array**, even for a single booking. Confirms §2's
+  structural point.
+- **`customerId` lives only on `bookings[n]`**, never on the appointment. Stable
+  and 1:1 with email across 105 customers — see §3 for why that does not
+  disambiguate siblings.
+- **Datetimes carry no timezone information at all** — no `T`, no `Z`, no
+  offset, and `utcOffset` is null on every record. Wall-clock Europe/London.
+  This vindicates `ameliaDatetimeToISO()` entirely; the existing handling is
+  necessary, not defensive over-engineering.
+- **Statuses observed:** `approved`, `canceled` (one L), `waiting`. Code also
+  references `pending` and `no-show`. The current filter excludes `canceled`,
+  `rejected`, `no-show` and `waiting`.
+
+### 11.5 Caching is mandatory, and must be time-based
+
+- **No `ETag`, no `Last-Modified`, `Cache-Control: no-store`.** Conditional
+  requests are impossible.
+- **~1.2 s per call** regardless of result size.
+- **The unfiltered appointments payload is 5.4 MB.**
+
+Combined with §6 — where every student page load and every iCal poll fetches the
+entire book — this is the strongest finding in the document. A student opening
+their bookings page currently costs 5.4 MB and over a second of WordPress time,
+to display a handful of rows.
+
+Since conditional requests are unavailable, the cache must be **time-based with
+webhook invalidation**: cache normalised appointments, invalidate on the (now
+working, per §11.1) webhook, and fall back to a short TTL.
+
+### 11.6 Packages are enabled but unused
+
+There is no native "lessons remaining" count to read. Deriving it from
+`couponId` counts is possible but hacky. Either start using Amelia packages
+properly, or track lesson blocks in the portal's own schema — the latter is
+probably cleaner given the portal already owns lesson records.
+
+### 11.7 Two operational issues (not code)
+
+- **Four of five custom fields are attached to zero services**, including
+  Student Age and previous experience, both marked required. They have never
+  captured anything.
+- **No 60-minute drum availability until January 2027**, while piano opens
+  normally from July 2026. If unintentional, this is silently blocking bookings
+  right now — worth checking ahead of anything in this document.
+
+---
+
+## 12. Still outstanding
+
+1. **The response-shape contradiction in §11.3.** Blocks client code.
+2. **`bookings[n].info` contents** — decides whether sibling disambiguation
+   (§3) can be automated.
+3. **Available webhook trigger types** in this Amelia version — decides whether
+   booking-added and rescheduled events can be subscribed to, or only
+   `bookingStatusUpdated`.
+4. **Booking-form URL parameters** for the prefilled reschedule deep link.
+5. **Whether the Replit dev workspace shares `DATABASE_URL` with production**
+   (§4.2).
+6. **Write-side API behaviour** — the investigation covered GETs only. If the
+   portal is to create or reschedule bookings, `/bookings` and `/stash` are
+   untested.
