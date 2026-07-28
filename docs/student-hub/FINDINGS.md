@@ -190,12 +190,27 @@ them, gaining that student's lessons, attachments, bookings and iCal feed.
 They are live in the Replit dev workspace, whose URL is publicly reachable while
 the workspace runs.
 
-**Open question that decides whether this matters:** does the dev workspace use
-the same `DATABASE_URL` as the deployed app? On Replit a single Postgres
-instance shared between workspace and deployment is the common default. If it is
-shared, the production database is reachable through a publicly-addressable dev
-URL by anyone who registers an account. If it is separate, this is a non-issue
-in practice.
+**RESOLVED (28 July 2026): the databases are separate.** Verified by comparing
+Postgres cluster `system_identifier` values, which is conclusive in a way a
+hostname compare would not be:
+
+| | Development | Production |
+|---|---|---|
+| Cluster ID | 7605610823969374230 | 7605690302383968437 |
+| Database | `heliumdb` (in-workspace) | `neondb` (Neon-backed) |
+| Public tables | 23 | 23 |
+
+Different cluster identifiers mean genuinely distinct clusters, not two names
+for one database. Schemas are in sync at 23 tables each.
+
+**So this finding is closed.** The `/api/dev/*` routes are absent from the
+deployed app and, even while live in the workspace, operate on a database the
+published app never touches. No action needed.
+
+**This does not extend to §4.1.** The object-storage routes are registered in
+*all* environments, so they are live on the public deployment at
+`hub.wirralmusicfactory.com`. The dev/prod split contains the dev routes; it
+does nothing for the upload and object-serving exposure.
 
 ### 4.3 Lower-priority items (unchanged)
 
