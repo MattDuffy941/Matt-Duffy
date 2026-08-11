@@ -117,6 +117,7 @@ export class GroovePlayer {
   private grooveTempo = 120; // tempo of the loop the groove walker is in
   private clickTempo = 120; // tempo of the loop the metronome walker is in
 
+  private startGeneration = 0; // invalidates a pending start() awaiting resume
   private loopStartTime = 0; // ctx time the current groove loop began
   private nextCell = 0;
   private clickLoopStartTime = 0;
@@ -129,10 +130,19 @@ export class GroovePlayer {
   /** Fires when auto speed-up raises the tempo at a loop boundary. */
   onTempoChange: ((bpm: number) => void) | null = null;
 
-  /** Must be called from a user gesture (autoplay policy). */
+  /**
+   * Must be called from a user gesture (autoplay policy).
+   *
+   * Note this only *requests* a resume — it does not wait for it. Anything that
+   * schedules against `currentTime` must wait for the context to actually be
+   * running (see `whenRunning`), because a suspended context's clock is frozen.
+   */
   private ensureContext(): AudioContext {
     if (!this.ctx) {
-      this.ctx = new AudioContext();
+      const Ctor: typeof AudioContext =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      this.ctx = new Ctor();
       this.synthKit = buildDrumKit(this.ctx);
       this.kit = this.synthKit;
       this.master = this.ctx.createGain();
@@ -142,10 +152,33 @@ export class GroovePlayer {
       limiter.ratio.value = 12;
       this.master.connect(limiter);
       limiter.connect(this.ctx.destination);
+      // Safari suspends (state 'interrupted') when the tab is hidden or another
+      // app takes the audio session; nudge it back when we're visible again.
+      document.addEventListener('visibilitychange', this.onVisibilityChange);
       if (this.kitName !== 'synth') void this.setKit(this.kitName);
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    if (this.ctx.state !== 'running') void this.ctx.resume();
     return this.ctx;
+  }
+
+  private onVisibilityChange = (): void => {
+    if (!document.hidden && this.playing && this.ctx && this.ctx.state !== 'running') {
+      void this.ctx.resume();
+    }
+  };
+
+  /**
+   * Resolve once the context is genuinely running.
+   *
+   * On Safari a freshly created context starts suspended and `resume()` can take
+   * well over 100 ms to settle — and while it's suspended `currentTime` does not
+   * advance. Scheduling against that frozen clock is why playback sometimes came
+   * out silent: every note landed in a window that had already passed by the
+   * time the clock started.
+   */
+  private whenRunning(ctx: AudioContext): Promise<void> {
+    if (ctx.state === 'running') return Promise.resolve();
+    return ctx.resume().then(() => undefined);
   }
 
   /**
@@ -201,16 +234,42 @@ export class GroovePlayer {
   /** Audition a single cell immediately (grid click feedback). */
   preview(sounds: { hihat?: HihatHit; snare?: SnareHit; kick?: KickHit; tom?: 1 | 2 | 3 | 4 }): void {
     const ctx = this.ensureContext();
-    const now = ctx.currentTime;
-    if (sounds.hihat) for (const s of hihatSounds(sounds.hihat)) this.playSound(s.name, now, s.gain);
-    if (sounds.snare) for (const s of snareSounds(sounds.snare)) this.playSound(s.name, now, s.gain);
-    if (sounds.kick) for (const s of kickSounds(sounds.kick)) this.playSound(s.name, now, s.gain);
-    if (sounds.tom) this.playSound(`tom${sounds.tom}` as SoundName, now, VELOCITY.normal);
+    const fire = () => {
+      const now = this.ctx!.currentTime;
+      if (sounds.hihat) for (const s of hihatSounds(sounds.hihat)) this.playSound(s.name, now, s.gain);
+      if (sounds.snare) for (const s of snareSounds(sounds.snare)) this.playSound(s.name, now, s.gain);
+      if (sounds.kick) for (const s of kickSounds(sounds.kick)) this.playSound(s.name, now, s.gain);
+      if (sounds.tom) this.playSound(`tom${sounds.tom}` as SoundName, now, VELOCITY.normal);
+    };
+    // Same frozen-clock problem as start(): on the very first tap the context
+    // may still be suspended, and a hit scheduled then is simply never heard.
+    if (ctx.state === 'running') fire();
+    else void this.whenRunning(ctx).then(fire, () => {});
   }
 
   start(groove: GrooveData, opts: PlayOptions = {}): void {
     this.stop();
     const ctx = this.ensureContext();
+    // Set these synchronously: callers (e.g. the video recorder) read
+    // loopDurationSeconds() straight after start(), before the resume settles.
+    this.groove = groove;
+    this.grooveTempo = groove.tempo;
+    this.clickTempo = groove.tempo;
+    // Mark intent immediately so a stop() during the resume wait cancels us.
+    this.playing = true;
+    const gen = ++this.startGeneration;
+    void this.whenRunning(ctx).then(
+      () => {
+        if (gen === this.startGeneration && this.playing) this.beginScheduling(groove, opts);
+      },
+      () => {
+        this.playing = false;
+      },
+    );
+  }
+
+  private beginScheduling(groove: GrooveData, opts: PlayOptions): void {
+    const ctx = this.ctx!;
     this.groove = groove;
     this.ramp = opts.rampBpmPerLoop ?? 0;
     this.grooveTempo = groove.tempo;
@@ -367,6 +426,7 @@ export class GroovePlayer {
 
   dispose(): void {
     this.stop();
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
     void this.ctx?.close();
     this.ctx = null;
   }
