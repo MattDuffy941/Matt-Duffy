@@ -11,12 +11,12 @@
  *
  * Practice features:
  *  - Count-in: one measure of clicks before the groove starts.
- *  - Auto speed-up: tempo rises by N BPM each loop (capped at 400). Loop
- *    start times are accumulated incrementally per loop, so the ramp never
- *    drifts; within a loop the tempo is constant.
+ *  - Auto speed-up: add a chosen BPM step after a chosen number of bars,
+ *    holding at the target. Bar times accumulate at each bar's own tempo,
+ *    keeping the groove and metronome together through multi-bar loops.
  */
 
-import { GrooveData, HihatHit, KickHit, SnareHit, totalCells } from '../grooveData';
+import { GrooveData, HihatHit, KickHit, SnareHit, cellsPerMeasure, totalCells } from '../grooveData';
 import { cellOffsetBeats, loopBeats, metronomeClicksPerMeasure, secondsPerBeat } from '../timing';
 import { DrumKit, SoundName, buildDrumKit } from './drumSynth';
 import { SAMPLE_KITS, loadSampleKit } from './sampleKit';
@@ -29,7 +29,13 @@ const VELOCITY = { accent: 1.0, normal: 0.7, ghost: 0.25 } as const;
 
 export interface PlayOptions {
   countIn?: boolean;
-  /** BPM added each time the loop wraps (0 = constant tempo). */
+  /** BPM added after rampEveryBars completed bars (0 = constant tempo). */
+  rampBpm?: number;
+  /** Completed musical bars between increases, excluding the count-in. */
+  rampEveryBars?: number;
+  /** Hold at this tempo without overshooting or lowering the starting tempo. */
+  targetTempo?: number;
+  /** Legacy whole-loop ramp, used when rampBpm is not supplied. */
   rampBpmPerLoop?: number;
 }
 
@@ -114,20 +120,28 @@ export class GroovePlayer {
   private highlightTimers = new Set<ReturnType<typeof setTimeout>>();
 
   private ramp = 0;
-  private grooveTempo = 120; // tempo of the loop the groove walker is in
-  private clickTempo = 120; // tempo of the loop the metronome walker is in
+  private rampEveryBars = 1;
+  private targetTempo = MAX_TEMPO;
+  private playOptions: PlayOptions = {};
+  private grooveTempo = 120;
+  private clickTempo = 120;
+  private grooveBars = 0;
+  private clickBars = 0;
+  private rampStartBar = 0;
+  private tempoGeneration = 0;
 
   private startGeneration = 0; // invalidates a pending start() awaiting resume
   private loopStartTime = 0; // ctx time the current groove loop began
+  private grooveBarStartTime = 0;
   private nextCell = 0;
-  private clickLoopStartTime = 0;
+  private clickBarStartTime = 0;
   private nextClick = 0;
 
   playing = false;
 
   /** Fires (from a timer, close to audibly on-time) as each cell plays. */
   onStep: ((cell: number) => void) | null = null;
-  /** Fires when auto speed-up raises the tempo at a loop boundary. */
+  /** Fires close to audibly on-time when speed-up raises the tempo at a bar boundary. */
   onTempoChange: ((bpm: number) => void) | null = null;
 
   /**
@@ -271,9 +285,18 @@ export class GroovePlayer {
   private beginScheduling(groove: GrooveData, opts: PlayOptions): void {
     const ctx = this.ctx!;
     this.groove = groove;
-    this.ramp = opts.rampBpmPerLoop ?? 0;
+    this.playOptions = { ...opts, countIn: false };
+    const ramp = opts.rampBpm ?? opts.rampBpmPerLoop ?? 0;
+    this.ramp = Number.isFinite(ramp) ? Math.max(0, ramp) : 0;
+    const bars = opts.rampEveryBars ?? (opts.rampBpm === undefined ? groove.measures : 1);
+    this.rampEveryBars = Number.isFinite(bars) ? Math.max(1, Math.round(bars)) : 1;
+    const target = opts.targetTempo ?? MAX_TEMPO;
+    this.targetTempo = Number.isFinite(target) ? Math.min(MAX_TEMPO, target) : MAX_TEMPO;
     this.grooveTempo = groove.tempo;
     this.clickTempo = groove.tempo;
+    this.grooveBars = 0;
+    this.clickBars = 0;
+    this.rampStartBar = 0;
 
     const startTime = ctx.currentTime + 0.08;
     let grooveStart = startTime;
@@ -287,7 +310,8 @@ export class GroovePlayer {
     }
 
     this.loopStartTime = grooveStart;
-    this.clickLoopStartTime = grooveStart;
+    this.grooveBarStartTime = grooveStart;
+    this.clickBarStartTime = grooveStart;
     this.nextCell = 0;
     this.nextClick = 0;
     this.playing = true;
@@ -301,22 +325,32 @@ export class GroovePlayer {
       this.groove = groove;
       return;
     }
-    const sameGrid = totalCells(groove) === totalCells(this.groove);
+    const sameGrid = totalCells(groove) === totalCells(this.groove)
+      && groove.div === this.groove.div
+      && groove.timeSig.top === this.groove.timeSig.top
+      && groove.timeSig.bottom === this.groove.timeSig.bottom;
     const tempoChanged = groove.tempo !== this.groove.tempo;
     this.groove = groove;
     if (!sameGrid) {
-      this.start(groove, { rampBpmPerLoop: this.ramp });
+      this.start(groove, this.playOptions);
       return;
     }
     if (tempoChanged) {
-      // manual tempo edit resets the ramp baseline
+      // Keep the current musical position when the manual tempo changes.
+      const now = this.ctx!.currentTime;
+      this.loopStartTime = now - (now - this.loopStartTime) * this.grooveTempo / groove.tempo;
+      this.grooveBarStartTime = now - (now - this.grooveBarStartTime) * this.grooveTempo / groove.tempo;
+      this.clickBarStartTime = now - (now - this.clickBarStartTime) * this.clickTempo / groove.tempo;
       this.grooveTempo = groove.tempo;
       this.clickTempo = groove.tempo;
+      this.rampStartBar = Math.max(this.grooveBars, this.clickBars);
+      this.tempoGeneration++;
     }
   }
 
   stop(): void {
     this.playing = false;
+    this.tempoGeneration++;
     if (this.timerId !== null) {
       clearInterval(this.timerId);
       this.timerId = null;
@@ -354,8 +388,12 @@ export class GroovePlayer {
     });
   }
 
-  private nextRampedTempo(tempo: number): number {
-    return Math.min(MAX_TEMPO, tempo + this.ramp);
+  private nextRampedTempo(tempo: number, completedBars: number): number {
+    const bars = completedBars - this.rampStartBar;
+    if (this.ramp <= 0 || tempo >= this.targetTempo || bars <= 0 || bars % this.rampEveryBars !== 0) {
+      return tempo;
+    }
+    return Math.min(this.targetTempo, tempo + this.ramp);
   }
 
   private scheduleLoop = (): void => {
@@ -364,55 +402,67 @@ export class GroovePlayer {
     if (!ctx || !g || !this.playing) return;
     const horizon = ctx.currentTime + SCHEDULE_AHEAD_S;
     const n = totalCells(g);
-    const loopDurBeats = loopBeats(g);
+    const perMeasure = cellsPerMeasure(g.timeSig, g.div);
+    const grooveMeasureBeats = loopBeats(g) / g.measures;
 
     // groove cells
     let spb = secondsPerBeat(this.grooveTempo);
-    let cellTime = this.loopStartTime + cellOffsetBeats(g, this.nextCell) * spb;
+    const cellTimeOf = (): number => this.grooveBarStartTime
+      + (cellOffsetBeats(g, this.nextCell) - Math.floor(this.nextCell / perMeasure) * grooveMeasureBeats) * spb;
+    let cellTime = cellTimeOf();
     while (cellTime < horizon) {
       this.scheduleCellSounds(g, this.nextCell, cellTime);
       this.scheduleStepCallback(this.nextCell, cellTime, ctx);
       this.nextCell++;
-      if (this.nextCell >= n) {
-        this.nextCell = 0;
-        this.loopStartTime += loopDurBeats * spb; // completed loop at its own tempo
-        if (this.ramp > 0 && this.grooveTempo < MAX_TEMPO) {
-          this.grooveTempo = this.nextRampedTempo(this.grooveTempo);
-          spb = secondsPerBeat(this.grooveTempo);
-          this.onTempoChange?.(this.grooveTempo);
+      if (this.nextCell % perMeasure === 0) {
+        this.grooveBarStartTime += grooveMeasureBeats * spb;
+        this.grooveBars++;
+        if (this.nextCell >= n) {
+          this.nextCell = 0;
+          this.loopStartTime = this.grooveBarStartTime;
         }
+        const nextTempo = this.nextRampedTempo(this.grooveTempo, this.grooveBars);
+        if (nextTempo !== this.grooveTempo) {
+          this.grooveTempo = nextTempo;
+          this.scheduleTempoCallback(nextTempo, this.grooveBarStartTime, ctx);
+        }
+        spb = secondsPerBeat(this.grooveTempo);
       }
-      cellTime = this.loopStartTime + cellOffsetBeats(g, this.nextCell) * spb;
+      cellTime = cellTimeOf();
     }
 
     // metronome clicks (independent stream so it works at any density)
     const clicks = metronomeClicksPerMeasure(g);
     if (clicks.length > 0) {
-      const measureBeats = g.timeSig.top;
-      const clicksPerLoop = clicks.length * g.measures;
+      const clickMeasureBeats = g.timeSig.top;
       let clickSpb = secondsPerBeat(this.clickTempo);
-      const clickTimeOf = (): number => {
-        const measure = Math.floor(this.nextClick / clicks.length);
-        const within = clicks[this.nextClick % clicks.length].offsetBeats;
-        return this.clickLoopStartTime + (measure * measureBeats + within) * clickSpb;
-      };
+      const clickTimeOf = (): number => this.clickBarStartTime + clicks[this.nextClick % clicks.length].offsetBeats * clickSpb;
       let clickTime = clickTimeOf();
       while (clickTime < horizon) {
         const c = clicks[this.nextClick % clicks.length];
         this.playSound(c.accent ? 'metronomeAccent' : 'metronome', clickTime, 0.9);
         this.nextClick++;
-        if (this.nextClick >= clicksPerLoop) {
+        if (this.nextClick >= clicks.length) {
           this.nextClick = 0;
-          this.clickLoopStartTime += loopDurBeats * clickSpb;
-          if (this.ramp > 0 && this.clickTempo < MAX_TEMPO) {
-            this.clickTempo = this.nextRampedTempo(this.clickTempo);
-            clickSpb = secondsPerBeat(this.clickTempo);
-          }
+          this.clickBarStartTime += clickMeasureBeats * clickSpb;
+          this.clickBars++;
+          this.clickTempo = this.nextRampedTempo(this.clickTempo, this.clickBars);
+          clickSpb = secondsPerBeat(this.clickTempo);
         }
         clickTime = clickTimeOf();
       }
     }
   };
+
+  private scheduleTempoCallback(bpm: number, when: number, ctx: AudioContext): void {
+    if (!this.onTempoChange) return;
+    const generation = this.tempoGeneration;
+    const t = setTimeout(() => {
+      this.highlightTimers.delete(t);
+      if (this.playing && generation === this.tempoGeneration) this.onTempoChange?.(bpm);
+    }, Math.max(0, (when - ctx.currentTime) * 1000));
+    this.highlightTimers.add(t);
+  }
 
   private scheduleStepCallback(cell: number, when: number, ctx: AudioContext): void {
     if (!this.onStep) return;
